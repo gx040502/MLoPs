@@ -1,0 +1,13 @@
+{
+    "datasets_dir": "./.gradio",
+    "datasets": [
+        {
+            "name": "screenshot_app",
+            "path": "./.gradio/screenshot_app"
+        },
+        {
+            "name": "globe",
+            "path": "./.gradio/globe"
+        }
+    ]
+}
