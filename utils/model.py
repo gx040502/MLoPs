@@ -381,8 +381,8 @@ if __name__ == "__main__":
     
     # # Process multiple images in a directory
     # directory_results = detector.process_image_directory(
-    #     # directory_path='/home/cy/Gitlab/.asset/Fresnel/Assembly/dev_sample/IMAGES/ADC52440010/HE_20250625081725',
-    #     directory_path="/home/cy/Gitlab/.asset",
+    #     # directory_path='./Gitlab/.asset/Fresnel/Assembly/dev_sample/IMAGES/ADC52440010/HE_20250625081725',
+    #     directory_path="./Gitlab/.asset",
     #     text_prompt="PCB. Wires. Pink squares. Chips. ",
     #     threshold=0.1,
     #     output_dir="results_fresnel",
