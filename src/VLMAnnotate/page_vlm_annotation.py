@@ -1,6 +1,6 @@
 import gradio as gr
 import os
-from vlm_object_detection import GdinoModel
+from .vlm_object_detection import GdinoModel
 from PIL import Image
 
 def load_vlm_interface(app_interface=None, app=None):

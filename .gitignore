@@ -6,6 +6,9 @@ drafts/
 .gradio
 .output
 .env
+huggingface/
+*.tar*
+.vscode
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
