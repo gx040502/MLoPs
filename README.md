@@ -29,7 +29,6 @@ Diagram levels are split into:
     *   [Environment Configuration](#environment-configuration)
     *   [Usage](#usage)
 *   [License](#license)
-*   [Sources](#sources)
 
 ## Getting Started
 
@@ -53,14 +52,12 @@ conda activate agentic
 # Extract the obtained zip file to current project root directory
 tar -xzvf archive.tar.gz
 
-# Run the program
-python3 main.py
+# Install the project for development mode
+python3 -m pip3 install -e . -v
+
+# Run the VLM Annotation Dashboard
+python3 -m VLMAnnotate
 ```
 
 ## License
-
-Copyright (C) PixeVision Sdn Bhd - All Rights Reserved  
-Unauthorized copying of this file, via any medium is strictly prohibited  
-Proprietary and confidential
-
-Written by Sze Kit Ong \<skong@pixevision.com\>, 2025-10-27 (yyyy-mm-dd)
+[Closed Source License](LICENSE.txt)
