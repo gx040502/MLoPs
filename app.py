@@ -21,7 +21,7 @@ class APP():
                 self.datasets_dir = self.config.get("datasets_dir", ".gradio")
                 self.html = self.create_dataset_html()
                 self.selected_dataset = ''
-                self.selected_dataset_1st_img_path = "/home/cy/Gitlab/.asset/VLM experiment.png"
+                self.selected_dataset_1st_img_path = "./Gitlab/.asset/VLM experiment.png"
 
             self.model = vlm_model
 
@@ -375,14 +375,14 @@ if __name__ == "__main__":
     # Load model into device: GPU or CPU
     print('Loading the model and processor...')
     model_id = "IDEA-Research/grounding-dino-base"
-    model_id = "/home/cy/.cache/huggingface/hub/models--IDEA-Research--grounding-dino-base/snapshots/12bdfa3120f3e7ec7b434d90674b3396eccf88eb"
+    model_id = "./.cache/huggingface/hub/models--IDEA-Research--grounding-dino-base/snapshots/12bdfa3120f3e7ec7b434d90674b3396eccf88eb"
     vlm_model = GroundingDINODetector(model_id=model_id)
 
     dataset_builder = COCODatasetBuilder()
 
 
     result = vlm_model.process_single_image(
-        image_path= "/home/cy/Gitlab/SEEAI/.output/globe/27_4_72-MW_1.jpg",
+        image_path= "./Gitlab/SEEAI/.output/globe/27_4_72-MW_1.jpg",
         text_prompt="Yellow Wire attached to a ball bond.",
         threshold=0.1,
         save_result=False,
@@ -391,12 +391,12 @@ if __name__ == "__main__":
     )
 
     result = vlm_model.detect_objects(
-        image= "/home/cy/Gitlab/SEEAI/.output/globe/27_4_72-MW_1.jpg",
+        image= "./Gitlab/SEEAI/.output/globe/27_4_72-MW_1.jpg",
         text_prompt="Yellow Wire attached to a ball bond.",
         threshold=0.1,
     )
 
-    img_path = '/home/cy/Gitlab/.asset/HE_9_7_O.jpg'
+    img_path = './Gitlab/.asset/HE_9_7_O.jpg'
     image = Image.open(img_path).convert("RGB")
     text_prompt = "Car."
     confidence_threshold = 0.3
