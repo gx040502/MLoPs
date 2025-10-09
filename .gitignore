@@ -10,6 +10,10 @@ huggingface/
 *.tar*
 .vscode
 
+# Ignore Virtual Environment
+.venv
+.conda
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

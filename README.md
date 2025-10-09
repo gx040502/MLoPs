@@ -34,21 +34,27 @@ Diagram levels are split into:
 
 ### Environment Configuration
 
-Use conda to create the virutal environment.
-```bash
-# Create the conda environment using the `YAML` file
-conda env create --prefix /opt/miniconda3/envs/agentic --file requirements.yaml
+> [!note]
+> Ensure that  your system is running **python>=3.12** before proceeding
 
-# List down available conda environments
-conda env list
+```bash
+# Create python virtual environment
+python3 -m venv .venv
+
+# Acticate python virtual environment
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
 ### Usage
 
-```bash
-# Activate the environment
-conda activate agentic
+> [!note]
+> Ensure you have activated the previously created virtual environment before
+> proceeding
 
+```bash
 # Extract the obtained zip file to current project root directory
 tar -xzvf archive.tar.gz
 
