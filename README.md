@@ -43,16 +43,15 @@ python3 -m venv .venv
 
 # Acticate python virtual environment
 source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
 ```
 
 ### Usage
 
-> [!note]
-> Ensure you have activated the previously created virtual environment before
-> proceeding
+>>> [!note]
+Ensure you have activated the previously created virtual environment before
+proceeding. **requirements.txt** will be installed by pip when installing the
+project for development.
+>>> 
 
 ```bash
 # Extract the obtained zip file to current project root directory
@@ -61,9 +60,19 @@ tar -xzvf archive.tar.gz
 # Install the project for development mode
 python3 -m pip3 install -e . -v
 
+# Remove the unused opencv depending on desktop or server
+python3 -m pip3 uninstall opencv-python # if running on server
+python3 -m pip3 uninstall opencv-python-headless # if running on desktop that has GUI
+
 # Run the VLM Annotation Dashboard
 python3 -m VLMAnnotate
 ```
+
+>>> [!tip]
+Try `pip install --force-reinstall opencv-python-headless` or 
+`pip install --force-reinstall opencv-python` if there is error 
+"**cv2 is not found**"
+>>>
 
 ## License
 [Closed Source License](LICENSE.txt)

@@ -10,6 +10,11 @@ huggingface/
 *.tar*
 .vscode
 
+# Ignore Ultralytics dataset, weights and runs
+datasets/
+weights/
+runs/
+
 # Ignore Virtual Environment
 .venv
 .conda
