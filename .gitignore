@@ -8,7 +8,6 @@ drafts/
 .env
 huggingface/
 *.tar*
-.vscode
 
 # Ignore Ultralytics dataset, weights and runs
 datasets/
