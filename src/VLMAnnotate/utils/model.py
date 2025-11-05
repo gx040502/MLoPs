@@ -14,7 +14,6 @@ from swarm_models import BaseMultiModalModel
 
 from pathlib import Path
 from huggingface_hub import login, HfFolder
-# from config import HUGGINGFACE_TOKEN
 
 import os
 from dotenv import load_dotenv
@@ -22,8 +21,6 @@ load_dotenv()
 
 HUGGINGFACE_TOKEN = os.getenv('HUGGINGFACE_TOKEN')
 
-
-print(Path('.').resolve())
 class GroundingDINODetector:
     """
     A class for zero-shot object detection using Grounding DINO model.

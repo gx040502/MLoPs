@@ -1,0 +1,8 @@
+{
+  "terminal.integrated.env.linux": {
+    "PYTHONPATH": "${workspaceFolder}/src"
+  },
+  "python.analysis.extraPaths": [
+    "${workspaceFolder}/src"
+  ]
+}

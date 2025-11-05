@@ -6,6 +6,17 @@ drafts/
 .gradio
 .output
 .env
+huggingface/
+*.tar*
+
+# Ignore Ultralytics dataset, weights and runs
+datasets/
+weights/
+runs/
+
+# Ignore Virtual Environment
+.venv
+.conda
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

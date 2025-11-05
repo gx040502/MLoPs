@@ -29,38 +29,50 @@ Diagram levels are split into:
     *   [Environment Configuration](#environment-configuration)
     *   [Usage](#usage)
 *   [License](#license)
-*   [Sources](#sources)
 
 ## Getting Started
 
 ### Environment Configuration
 
-Use conda to create the virutal environment.
-```bash
-# Create the conda environment using the `YAML` file
-conda env create --prefix /opt/miniconda3/envs/agentic --file requirements.yaml
+> [!note]
+> Ensure that  your system is running **python>=3.12** before proceeding
 
-# List down available conda environments
-conda env list
+```bash
+# Create python virtual environment
+python3 -m venv .venv
+
+# Acticate python virtual environment
+source .venv/bin/activate
 ```
 
 ### Usage
 
-```bash
-# Activate the environment
-conda activate agentic
+>>> [!note]
+Ensure you have activated the previously created virtual environment before
+proceeding. **requirements.txt** will be installed by pip when installing the
+project for development.
+>>> 
 
+```bash
 # Extract the obtained zip file to current project root directory
 tar -xzvf archive.tar.gz
 
-# Run the program
-python3 main.py
+# Install the project for development mode
+python3 -m pip3 install -e . -v
+
+# Remove the unused opencv depending on desktop or server
+python3 -m pip3 uninstall opencv-python # if running on server
+python3 -m pip3 uninstall opencv-python-headless # if running on desktop that has GUI
+
+# Run the VLM Annotation Dashboard
+python3 -m VLMAnnotate
 ```
 
+>>> [!tip]
+Try `pip install --force-reinstall opencv-python-headless` or 
+`pip install --force-reinstall opencv-python` if there is error 
+"**cv2 is not found**"
+>>>
+
 ## License
-
-Copyright (C) PixeVision Sdn Bhd - All Rights Reserved  
-Unauthorized copying of this file, via any medium is strictly prohibited  
-Proprietary and confidential
-
-Written by Sze Kit Ong \<skong@pixevision.com\>, 2025-10-27 (yyyy-mm-dd)
+[Closed Source License](LICENSE.txt)

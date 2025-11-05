@@ -9,12 +9,11 @@ import matplotlib
 from PIL import Image, ImageDraw, ImageFont
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection 
 
-from utils import COCODatasetBuilder, GroundingDINODetector
+from .utils import COCODatasetBuilder, GroundingDINODetector
 
 class APP():
-
     def __init__(self, vlm_model: GroundingDINODetector=None):
-        self.json_path = os.path.join(os.path.dirname(__file__), 'settings.json')
+        self.json_path = 'settings.json'
         try:
             with open(self.json_path, 'r') as config_file:
                 self.config = json.load(config_file)
@@ -371,7 +370,6 @@ class APP():
 
 
 if __name__ == "__main__":
-
     # Load model into device: GPU or CPU
     print('Loading the model and processor...')
     model_id = "IDEA-Research/grounding-dino-base"
@@ -379,7 +377,6 @@ if __name__ == "__main__":
     vlm_model = GroundingDINODetector(model_id=model_id)
 
     dataset_builder = COCODatasetBuilder()
-
 
     result = vlm_model.process_single_image(
         image_path= "./Gitlab/SEEAI/.output/globe/27_4_72-MW_1.jpg",

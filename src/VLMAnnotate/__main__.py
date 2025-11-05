@@ -1,17 +1,12 @@
 import gradio as gr
-import os
-import json
-import random
-import time
-from typing import List, Dict, Any
 
-from app import APP
-from page_datasets import load_dataset_interface
-from page_vlm_annotation import load_vlm_interface
-import utils
+from . import utils
 
+from .app import APP
+from .page_datasets import load_dataset_interface
+from .page_vlm_annotation import load_vlm_interface
 
-if __name__ == "__main__": 
+def main():
     # Initialize the app
     model_id = "./huggingface/hub/models--IDEA-Research--grounding-dino-base/snapshots/12bdfa3120f3e7ec7b434d90674b3396eccf88eb"
     gdino = utils.GroundingDINODetector(model_id)
@@ -29,3 +24,6 @@ if __name__ == "__main__":
         server_name="0.0.0.0",  # Allow external connections
         server_port=6605 #Testing Port
     )
+
+if __name__ == '__main__':
+    main()

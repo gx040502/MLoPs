@@ -1,0 +1,5 @@
+Copyright (C) PixeVision Sdn Bhd - All Rights Reserved  
+Unauthorized copying of this file, via any medium is strictly prohibited  
+Proprietary and confidential
+
+Written by Sze Kit Ong \<skong@pixevision.com\>, 2025-10-27 (yyyy-mm-dd)
