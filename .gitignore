@@ -8,6 +8,8 @@ drafts/
 .env
 huggingface/
 *.tar*
+*.zip*
+*.pt
 
 # Ignore Ultralytics dataset, weights and runs
 datasets/
