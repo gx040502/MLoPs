@@ -7,8 +7,12 @@ from pathlib import Path
 from http import HTTPStatus
 from urllib.parse import parse_qsl, urlparse
 
+import torch
+import numpy as np
+
 from tqdm import tqdm
 from ultralytics import settings
+from ultralytics.engine.results import Boxes, Masks, Probs
 from cvat_sdk.api_client import Configuration, ApiClient, models
 
 def download_cvat_dataset(
@@ -268,3 +272,31 @@ def extract_cvat_zip(
                     )
     
     return yaml_file
+
+def jsonify_ultra_result(result: Boxes | Masks | Probs) -> dict:
+    '''Handle each item in ultralytics.engine.results.Result instance to make 
+    it json compatible because numpy.ndarray and torch.Tensor is not uncompatible
+    with json.
+    
+    Args:
+        result (Boxes | Masks | Probs): Any one of the attributes in
+            ultralytics.engine.results.Result class
+    
+    Returns:
+        res (dict): A dictionary or any data type or data structure that is json
+            compatible.
+    
+    '''
+    if isinstance(result, (Boxes, Masks, Probs)):
+        attributes = [x for x in result.__class__.__dict__.keys() if not x.startswith("__")]
+        res = {}
+        for k in attributes:
+            value = getattr(result, k)
+            res[k] = value.tolist() if isinstance(value, (torch.Tensor, np.ndarray)) else value
+    elif isinstance(result, (torch.Tensor, np.ndarray)):
+        res = result.tolist()
+    elif isinstance(result, tuple):
+        res = list(result)
+    else:
+        res = result
+    return res
