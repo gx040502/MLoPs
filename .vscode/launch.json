@@ -15,6 +15,13 @@
             "type": "debugpy",
             "request": "launch",
             "module": "ModelManager"
+        },
+        {
+            "name": "LitServer",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/examples/server_launch.py",
+            "console": "integratedTerminal",
         }
     ],
 }
