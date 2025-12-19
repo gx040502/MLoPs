@@ -1,0 +1,2 @@
+/home/intern/Gitlab/pipeline/Dataset/Task_706/images/Train/HHF22430099_1_1_P_1.jpg
+/home/intern/Gitlab/pipeline/Dataset/Task_706/images/Train/HHF22430099_1_1_P_2.jpg

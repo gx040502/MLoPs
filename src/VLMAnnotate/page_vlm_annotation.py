@@ -8,11 +8,49 @@ def load_vlm_interface(app_interface=None, app=None):
     gr.Markdown("# 🎯 See.AI Agent for Defect Inspection / Yield Improvement")
     gr.Markdown("## AI Agent to annotate data")
     gr.Markdown("Upload an image and describe what objects you want to detect!")
+    
+    gr.HTML("""
+        <style>
+            #btn {
+                background: linear-gradient(45deg, #11998e, #38ef7d);
+                border: none;
+                color: white !important;
+                font-weight: bold;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                transition: all 0.3s ease;
+            }
+            #del_btn {
+                background: linear-gradient(45deg, #FF416C, #FF4B2B);
+                border: none;
+                color: white !important;
+                font-weight: bold;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                transition: all 0.3s ease;
+            }
+            #del_btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+            }
+            #btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+            }
+            /* Global Slider Styling */
+            input[type=range] {
+                accent-color: #667eea !important; 
+                filter: hue-rotate(240deg);
+            }
+            /* For Firefox */
+            input[type=range]::-moz-range-thumb {
+                background-color: #667eea !important;
+            }
+        </style>
+    """)
 
     with gr.Row():
         with gr.Column(scale=1):
             image_input = gr.Image(
-                value="./.gradio/VLM experiment.png",  # Put your sample image path here
+                # value="./.gradio/VLM experiment.png",  # Put your sample image path here
                 type="pil",
                 label="Upload Image",
                 height=400,
@@ -33,8 +71,8 @@ def load_vlm_interface(app_interface=None, app=None):
                 label="Confidence Threshold"
             )
 
-            detect_btn = gr.Button("🔍 Detect Objects", variant="primary", size="lg")
-            clear_btn = gr.Button("🗑️ Clear", variant="secondary")
+            detect_btn = gr.Button("🔍 Detect Objects", variant="primary", size="lg",elem_id="btn")
+            clear_btn = gr.Button("🗑️ Clear", variant="secondary",elem_id="del_btn")
             sel_btn = gr.Button("Globe Dataset", variant="secondary")
             
             # Example prompts
@@ -60,13 +98,29 @@ def load_vlm_interface(app_interface=None, app=None):
                 lines=2,
                 show_copy_button=False
             )
-            inference_output = gr.Textbox(
+            # inference_output = gr.Textbox(
+            #     label="Reference Output",
+            #     lines=2,
+            #     show_copy_button=False,
+            #     value="Ready for inference on dataset"
+            # )
+        
+            inference_output = gr.HTML(
                 label="Reference Output",
-                lines=2,
-                show_copy_button=False,
-                value="Ready for inference on dataset"
+                value="<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); background: var(--input-background-fill); border-radius: var(--container-radius); min-height: 80px; color: var(--body-text-color);'>Ready for inference on dataset</div>"
             )
-            inference_btn = gr.Button("Inference Dataset", variant="primary")
+
+            inference_btn = gr.Button("Inference Dataset", variant="primary",elem_id="btn")
+            
+            # CVAT Integration Elements
+            cvat_project_dropdown = gr.Dropdown(
+                label="Assign to CVAT Project", 
+                choices=app.get_cvat_projects(), 
+                visible=False, 
+                interactive=False
+            )
+            cvat_btn = gr.Button("Create CVAT Task", visible=False, variant="primary")
+            
             download_btn = gr.DownloadButton("Download COCO Dataset", variant="primary", visible=False)
 
             detection_info = gr.Textbox(
@@ -99,27 +153,45 @@ def load_vlm_interface(app_interface=None, app=None):
     )
 
     sel_btn.click(
-        fn=lambda: app.select_dataset('globe'),
+        fn=lambda: app.select_dataset('globe')[1],
         outputs=[inference_output]
     )
+
+#     inference_btn.click(
+#         fn=app.inference_dataset,
+#         inputs=[text_input, confidence_slider],
+#         outputs=[inference_output]
+#     ).then(
+#         fn=lambda: [gr.Button(visible=False), 
+#                     gr.DownloadButton(label=f"Download Dataset: {app.selected_dataset}", 
+#                                       value= f"./.output/{app.selected_dataset}_coco.zip", 
+#                                       visible=True)],
+#         outputs=[inference_btn, download_btn]
+#     )
 
     inference_btn.click(
         fn=app.inference_dataset,
         inputs=[text_input, confidence_slider],
         outputs=[inference_output]
     ).then(
-        fn=lambda: [gr.Button(visible=False), 
-                    gr.DownloadButton(label=f"Download Dataset: {app.selected_dataset}", 
-                                      value= f"./.output/{app.selected_dataset}_coco.zip", 
-                                      visible=True)],
-        outputs=[inference_btn, download_btn]
+        fn=lambda: [gr.Button(visible=False), gr.Button(visible=True), gr.Dropdown(visible=True)],
+        outputs=[inference_btn, cvat_btn, cvat_project_dropdown]
     )
 
-    download_btn.click(
-        fn=lambda: [gr.Button(visible=True), 
-                    gr.DownloadButton(visible=False)],
-        outputs=[inference_btn, download_btn]
+    cvat_btn.click(
+        fn=app.create_cvat_task,
+        inputs=[cvat_project_dropdown],
+        outputs=[inference_output]
+    ).then(
+        fn=lambda: [gr.Button(visible=True), gr.Button(visible=False), gr.Dropdown(visible=False)],
+        outputs=[inference_btn, cvat_btn, cvat_project_dropdown]
     )
+
+#     download_btn.click(
+#         fn=lambda: [gr.Button(visible=True), 
+#                     gr.DownloadButton(visible=False)],
+#         outputs=[inference_btn, download_btn]
+#     )
     
     # Allow Enter key to trigger detection
     text_input.submit(
@@ -149,8 +221,12 @@ def load_vlm_interface(app_interface=None, app=None):
             dataset_img_path = app.selected_dataset_1st_img_path
             if os.path.exists(dataset_img_path) and os.path.splitext(dataset_img_path)[1].lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']:
                 return dataset_img_path
-        else:
-            return "./.gradio/VLM experiment.png"  # Default image path
+        
+        # Fallback if no valid dataset path or default file is found
+        default_path = "./.gradio/VLM experiment.png"
+        if os.path.exists(default_path):
+             return default_path
+        return None
         
     app_interface.load(
         fn=load_selected_img,

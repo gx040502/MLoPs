@@ -10,8 +10,8 @@ import litserve as ls
 from fastapi.testclient import TestClient
 from litserve.utils import wrap_litserve_start
 
-from ModelManager.base import YOLOAI
-from ModelManager.utils import BasePreprocessor
+from ModelManager.base import YOLOAI # from server.base import YOLOAI
+from ModelManager.utils import BasePreprocessor # from server.utils import BasePreprocessor
 
 # Prepare da
 sample = './assests/zapfan.jpeg'
@@ -24,6 +24,7 @@ np.save(a, ndarray, allow_pickle=False)
 binary_data = a.getvalue()
 
 def test_torch_cpu():
+    #create temporary instance if the AI server on the CPU
     server = ls.LitServer(YOLOAI(enable_async=True), accelerator="cpu", devices=1)
     with wrap_litserve_start(server) as server, TestClient(server.app) as client:
         # Unprocessed image

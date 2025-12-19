@@ -1,0 +1,5 @@
+train: /home/intern/Gitlab/pipeline/Dataset/Task_706/Train.txt
+val: /home/intern/Gitlab/pipeline/Dataset/Task_706/Validation.txt
+names:
+  0: object
+path: .
