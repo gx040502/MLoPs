@@ -23,16 +23,17 @@ def load_dataset_interface(app_interface, app):
 
     def delete_dataset_handler(dataset_name: str) -> tuple:
         """Handle dataset deletion and return updated state"""
-        result = app.remove_dataset(dataset_name)
+        success, message = app.remove_dataset(dataset_name)
         updated_datasets = refresh_datasets_state()
-        datasets_html = app.create_dataset_html()
-        return result, updated_datasets, datasets_html
+        return message, updated_datasets
 
     def upload_and_refresh(zip_file) -> tuple:
         """Handle upload and refresh datasets"""
-        upload_result = app.upload_dataset_by_zip(zip_file)
+        success, message = app.upload_dataset_by_zip(zip_file)
+        if success:
+            message = "Successfully uploaded"
         updated_datasets = refresh_datasets_state()
-        return upload_result, updated_datasets
+        return message, updated_datasets
 
     # Global state to store datasets
     datasets_state = gr.State(value=refresh_datasets_state())
@@ -87,82 +88,333 @@ def load_dataset_interface(app_interface, app):
     """)
     
     with gr.Tabs() as tabs:
-        with gr.Tab("📤 Upload Dataset") as upload_tab:
-            upload_tab.select(fn=lambda: app.cleanup_preview(), outputs=None)
-            
-            gr.Markdown("## Upload New Dataset")
-            gr.Markdown("Upload a ZIP file containing your dataset. It will be extracted and added to the available datasets.")
-            
-            with gr.Column():
-                zip_file_input = gr.File(
-                    label="Upload ZIP File", 
-                    file_count="single", 
-                    file_types=[".zip"], 
-                    type="filepath"
-                )
-                
-                upload_btn = gr.Button("📤 Upload & Extract", variant="primary", size="lg",elem_id="btn")
-                
-                gr.HTML("<div style='margin-top: 15px;'></div>")
-                
-                upload_status = gr.Textbox(
-                    label="Upload Status", 
-                    interactive=False, 
-                    lines=10,
-                    value="Ready to upload..."
-                )
-        # HOME/DATASETS TAB
-        with gr.Tab("📊 Home - Datasets") as datasets_tab:
-            datasets_tab.select(fn=lambda: app.cleanup_preview(), outputs=None)
+        with gr.Tab("Upload and Select") as upload_select_tab:
 
-            with gr.Column():
-                gr.Markdown("## Available Datasets")
-            
-                # Datasets display
-                datasets_display = gr.HTML(
-                    value=app.create_dataset_html(),
-                    label="Datasets"
-                )
-                
-                # Status display
-                status_output = gr.Textbox(
-                    label="Selected Dataset", 
-                    interactive=False, 
-                    lines=2,
-                    value="Ready"
-                )
+           
+            with gr.Row():
+                # Left Column: Upload
+                with gr.Column(scale=1):
+                    gr.Markdown("## Upload New Dataset")
+                    
+                    zip_file_input = gr.File(
+                        label="Upload ZIP File", 
+                        file_count="single", 
+                        file_types=[".zip"], 
+                        type="filepath",
+                        height=207
+                    )
+                    
+                    upload_btn = gr.Button("📤 Upload & Extract", variant="primary", size="lg",elem_id="btn")
+                    
+                    upload_status = gr.Markdown(
+                        "Ready to upload..."
+                    )
 
-                # Dataset selection
-                with gr.Row():
+                # Right Column: Management
+                with gr.Column(scale=1):
+                    gr.Markdown("## Available Datasets")
+                    
                     dataset_dropdown = gr.Dropdown(
                         choices=[d["name"] for d in refresh_datasets_state()],
                         label="Select Dataset",
                         interactive=True
                     )
-                
+                    
+                    status_output = gr.Textbox(
+                        label="Selected Dataset", 
+                        interactive=False, 
+                        lines=2,
+                        value="Ready"
+                    )
+                    
+                    with gr.Row():
+                        delete_btn = gr.Button("🗑️ Delete Selected Dataset", variant="secondary",elem_id="del_btn")
+                        annotate_btn = gr.Button("📂 Annotate", variant="primary",elem_id="btn")
+                    
+                    delete_status = gr.Markdown(visible=True)
+                        
                 # Video Frame Extraction Configuration
-                with gr.Group(visible=False) as video_config_group:
-                    gr.Markdown("### 🎥 Video Processing Enabled")
-                    gr.Markdown("This dataset contains video files. Extracted frames will be combined with existing images into a **temporary dataset** for annotation.")
-                    video_dataframe = gr.Dataframe(
-                        headers=["Video Name", "Duration", "Extraction Interval"],
-                        datatype=["str", "str", "str"],
-                        col_count=(3, "fixed"),
-                        type="pandas",
+            with gr.Group(visible=False) as video_config_group:
+                gr.Markdown("### 🎥 Video Processing Enabled")
+                gr.Markdown("This dataset contains video files. Extracted frames will be combined with existing images into a **temporary dataset** for annotation.")
+                interval_slider = gr.Slider(
+                    minimum=0.0, maximum=60.0, value=1.0, step=0.1, 
+                    label="Extraction Interval (seconds)"
+                )
+                
+                video_dataframe = gr.Dataframe(
+                    headers=["Video Name", "Duration"],
+                    datatype=["str", "str"],
+                    col_count=(2, "fixed"),
+                    type="pandas",
+                    interactive=False,
+                    label="Videos to Process"
+                )
+
+        # VLM ANNOTATION TAB
+        
+        with gr.Tab("VLM Annotation", id="vlm_tab") as vlm_tab:
+            
+            # --- VLM Code Integration ---
+            gr.Markdown("## AI Agent to annotate data")
+            
+            def load_selected_img():
+                if app.selected_dataset:
+                    dataset_img_path = app.selected_dataset_1st_img_path
+                    if os.path.exists(dataset_img_path) and os.path.splitext(dataset_img_path)[1].lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']:
+                        return dataset_img_path
+                return None # No default fallback here to keep it clean, or use placeholder if preferred
+            
+            def refresh_vlm_dropdown():
+                # Refresh dataset list and return update
+                all_datasets = app.get_all_datasets()
+                choices = [d["name"] for d in all_datasets]
+                # Keep currently selected value if valid, or just current app selection
+                val = app.selected_dataset if app.selected_dataset else None
+                return gr.update(choices=choices, value=val)
+
+            def get_dataset_images_for_gallery():
+                if not app.selected_dataset:
+                    return []
+                success, dataset = app.get_dataset_by_name(app.selected_dataset)
+                if not success: return []
+                
+                path = dataset.get("path")
+                if not path or not os.path.exists(path): return []
+                
+                images = []
+                valid_ext = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+                for f in sorted(os.listdir(path)):
+                    if f.lower().endswith(valid_ext):
+                        images.append(os.path.join(path, f))
+                return images
+
+          
+            with gr.Row():
+                with gr.Column(scale=1):
+                    # --- Dataset Reselection Logic ---
+                    gr.Markdown("### 🗂️ Change Dataset")
+                    vlm_dataset_dropdown = gr.Dropdown(
+                        choices=[d["name"] for d in app.config.get("datasets", [])],
+                        label="Select Dataset",
+                        value=app.selected_dataset if app.selected_dataset else None,
                         interactive=True,
-                        label="Configure Frame Extraction (e.g., '1s', '5s', '1m')"
+                        allow_custom_value=True
                     )
 
-                with gr.Row():
-                    with gr.Column():
-                        annotate_btn = gr.Button("📂 Annotate", variant="primary",elem_id="btn")
-                        delete_btn = gr.Button("🗑️ Delete Selected Dataset", variant="secondary",elem_id="del_btn")
+                    # Video Config Group (initially hidden)
+                    with gr.Group(visible=False) as vlm_video_group:
+                        gr.Markdown("#### 🎥 Video Processing Required")
+                        
+                        with gr.Row():
+                            vlm_interval_slider = gr.Slider(
+                                minimum=0.0, maximum=60.0, value=1.0, step=0.1, 
+                                label="Extraction Interval (seconds)"
+                            )
+                            
+                        vlm_video_dataframe = gr.Dataframe(
+                            headers=["Video Name", "Duration"],
+                            datatype=["str", "str"],
+                            col_count=(2, "fixed"),
+                            type="pandas",
+                            interactive=False,
+                            label="Videos to Process"
+                        )
+                        vlm_process_btn = gr.Button("⚙️ Process & Load", variant="secondary",elem_id="btn")
                 
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 🖼️ Dataset Gallery")
+                        vlm_gallery = gr.Gallery(
+                            label="Select Image from Dataset",
+                            show_label=False,
+                            columns=[4],
+                            rows=[1],
+                            height= 150, # Managed by CSS
+                            allow_preview=True,
+                            interactive=True,
+                        )
+                
+                
+                
+            with gr.Row():
+                with gr.Column(scale=1):
+                    gr.Markdown("### 📸 Sample Image")
+                    vlm_image_input = gr.Image(
+                        type="pil",
+                        label="Upload Image",
+                        height=400,
+                    )
+                        
+                    vlm_text_input = gr.Textbox(
+                        value="Black Resistor. Wires. Chips.",
+                        label="Text Prompt",
+                        placeholder="Describe objects to detect (e.g., 'a person. a car. a dog.')",
+                        lines=2
+                    )
 
-        # UPLOAD TAB
+                    # ---------------------------------
+                        
+                    vlm_confidence_slider = gr.Slider(
+                        minimum=0.01, maximum=1.0, value=0.15, step=0.01, label="Confidence Threshold"
+                    )
+
+                    detect_btn = gr.Button("🔍 Detect Objects", variant="primary", size="lg", elem_id="btn")
+                    clear_btn = gr.Button("🗑️ Clear", variant="secondary", elem_id="del_btn",visible=False)
+                        
+                    
+                
+                with gr.Column(scale=1):
+                        
+                    gr.Markdown("### 📊 Output")
+                    prompt_output = gr.Textbox(
+                        label="Parameters Used ", 
+                        lines=2, 
+                        show_copy_button=False,
+                        visible=False
+                    )
+                    vlm_output_image = gr.Image(label="Detection Results", height=400)
+                    inference_btn = gr.Button("Inference Dataset", variant="primary", elem_id="btn")
+                    inference_output = gr.HTML(
+                        padding=False,
+                        label="Reference Output",
+                        value=(
+                            "<div style='padding: var(--size-2); "
+                            "border: 1px solid var(--block-border-color); "
+                            "background: var(--input-background-fill); "
+                            "border-radius: var(--container-radius); "
+                            "min-height: 80px; "
+                            "width: 100%; "
+                            "box-sizing: border-box; "  
+                            "color: var(--body-text-color);'>"
+                            "Ready for inference on dataset</div>"
+                        )
+                    )
+
+                    # CVAT Integration Elements
+                    cvat_project_dropdown = gr.Dropdown(
+                        label="Assign to CVAT Project", 
+                        choices=app.get_cvat_projects(), 
+                        visible=False, 
+                        interactive=False,
+                        elem_id="cvat_project_dd"
+                    )
+                    cvat_btn = gr.Button("Create CVAT Task", visible=False, variant="primary")
+                    
+                    detection_info = gr.Textbox(label="Detection Details", lines=10, show_copy_button=True,visible=False)
+                    raw_output = gr.Textbox(label="Raw Results", lines=5, show_copy_button=True,visible=False)
+
+            # Event handlers
+            detect_btn.click(
+                fn=app.process_image,
+                inputs=[vlm_image_input, vlm_text_input, vlm_confidence_slider],
+                outputs=[vlm_output_image, detection_info, raw_output]
+            ).then(
+                fn=lambda prompt, conf: f"Prompt: {prompt}\nConfidence: {conf}",
+                inputs=[vlm_text_input, vlm_confidence_slider],
+                outputs=[prompt_output]
+            )
+            
+            # --- VLM Dataset Reselection Events ---
+            def on_vlm_dataset_select(dataset_name):
+                if not dataset_name: return gr.update(visible=False), None
+                video_files = app.scan_for_videos(dataset_name)
+                has_videos = len(video_files) > 0
+                if has_videos:
+                     df_data = [[v["Video Name"], v["Duration"]] for v in video_files]
+                     return gr.update(visible=True), df_data
+                else:
+                     app.select_dataset(dataset_name)
+                     return gr.update(visible=False), None
+
+            vlm_dataset_dropdown.change(
+                fn=on_vlm_dataset_select,
+                inputs=[vlm_dataset_dropdown],
+                outputs=[vlm_video_group, vlm_video_dataframe]
+            ).then(
+                fn=load_selected_img, outputs=[vlm_image_input]
+            ).then(
+                fn=get_dataset_images_for_gallery, outputs=[vlm_gallery]
+            )
+            
+            def on_vlm_process_click(dataset_name, video_df, interval_val):
+                success, result = app.extract_frames_from_dataset(
+                    dataset_name, video_df, interval_val=interval_val
+                )
+                
+                # Refresh dropdown choices as new temp dataset is created
+                all_datasets = app.get_all_datasets()
+                choices = [d["name"] for d in all_datasets]
+                
+                # If success, result is temp_name which is already selected in app
+                new_val = result if success else dataset_name
+                
+                return gr.update(visible=False), gr.update(choices=choices, value=new_val)
+
+            vlm_process_btn.click(
+                fn=on_vlm_process_click,
+                inputs=[vlm_dataset_dropdown, vlm_video_dataframe, vlm_interval_slider],
+                outputs=[vlm_video_group, vlm_dataset_dropdown]
+            ).then(
+                fn=load_selected_img, outputs=[vlm_image_input]
+            ).then(
+                fn=get_dataset_images_for_gallery, outputs=[vlm_gallery]
+            )
+
+            clear_btn.click(
+                lambda: [None, "", 0.15, None, "", ""],
+                outputs=[vlm_image_input, vlm_text_input, vlm_confidence_slider, vlm_output_image, detection_info, raw_output]
+            )
+
+            inference_btn.click(
+                fn=app.inference_dataset,
+                inputs=[vlm_text_input, vlm_confidence_slider],
+                outputs=[inference_output]
+            ).then(
+                fn=lambda: [gr.Button(visible=False), gr.Button(visible=True), gr.Dropdown(visible=True)],
+                outputs=[inference_btn, cvat_btn, cvat_project_dropdown]
+            )
+
+            cvat_btn.click(
+                fn=app.create_cvat_task,
+                inputs=[cvat_project_dropdown],
+                outputs=[inference_output]
+            ).then(
+                fn=lambda: [gr.Button(visible=True), gr.Button(visible=False), gr.Dropdown(visible=False)],
+                outputs=[inference_btn, cvat_btn, cvat_project_dropdown]
+            )
+            
+            vlm_text_input.submit(
+                fn=app.process_image,
+                inputs=[vlm_image_input, vlm_text_input, vlm_confidence_slider],
+                outputs=[vlm_output_image, detection_info, raw_output]
+            )
+            
+            # Tab Select Event: Refresh Dropdown AND Load Image AND Gallery
+            vlm_tab.select(
+                fn=refresh_vlm_dropdown, 
+                outputs=[vlm_dataset_dropdown]
+            ).then(
+                fn=load_selected_img, 
+                outputs=[vlm_image_input]
+            ).then(
+                fn=get_dataset_images_for_gallery, 
+                outputs=[vlm_gallery]
+            )
+
+            # Gallery Select Event
+            def on_gallery_select(evt: gr.SelectData):
+                return evt.value["image"]["path"]
+
+            vlm_gallery.select(
+                fn=on_gallery_select,
+                outputs=[vlm_image_input]
+            )
+
+
+        # UPLOAD TAB (Original placeholder)
         
         with gr.Tab("🧠 Train Model") as train_tab:
-            train_tab.select(fn=lambda: app.cleanup_preview(), outputs=None)
+
             
             gr.Markdown("## Train New Model")
             gr.Markdown("Train a new model from your CVAT Task")
@@ -204,7 +456,7 @@ def load_dataset_interface(app_interface, app):
                 training_log = gr.Textbox(
                     label="Training Log", 
                     interactive=False, 
-                    lines=5,
+                    lines=2,
                     value="Waiting to start..."
                 )
                 # ETA Components
@@ -507,7 +759,7 @@ def load_dataset_interface(app_interface, app):
                         elem_id="model_plots",
                         columns=[4],
                         rows=[1],
-                        height="auto",
+                        height=200,
                         allow_preview=True,
                         object_fit="contain",
                         interactive=False
@@ -523,24 +775,27 @@ def load_dataset_interface(app_interface, app):
                 )
                 
                 # 2. Prediction Interface
+                
+                gr.Markdown("### 📂 Select Test Image")
+                test_gallery = gr.Gallery(
+                    label="Test Images", 
+                    show_label=False, 
+                    elem_id="test_gallery",
+                    columns=[4],
+                    rows=[1],
+                    height=150,
+                    allow_preview=True,
+                    interactive=True
+                )
                 with gr.Row():
-                    # Left Column: Input
-                    with gr.Column():
-
-                        gr.Markdown("### 📂 Select Test Image")
-                        test_gallery = gr.Gallery(
-                            label="Test Images", 
-                            show_label=False, 
-                            elem_id="test_gallery",
-                            columns=[1],
-                            rows=[1],
-                            height="auto",
-                            allow_preview=False,
-                            interactive=True
-                        )
+                    with gr.Column(scale=1):
                         gr.Markdown("### 🖼️ Run Prediction")
-                        input_img = gr.Image(label="Input Image", type="pil")
-                        
+                        input_img = gr.Image(
+                            label="Input Image", 
+                            type="pil",
+                            height=400
+                        )
+                            
                         conf_slider = gr.Slider(
                             minimum=0.01, maximum=1.0, value=0.25, 
                             step=0.01, label="Confidence Threshold"
@@ -550,13 +805,13 @@ def load_dataset_interface(app_interface, app):
                             minimum=0.01, maximum=1.0, value=0.45, 
                             step=0.01, label="IOU Threshold"
                         )
-                        
+                            
                         predict_btn = gr.Button("🚀 Predict Image", variant="primary", elem_id="btn")
-
-                    # Right Column: Output
-                    with gr.Column():
-                        output_img = gr.Image(label="Prediction Result", type="pil")
-                        result_details = gr.Code(label="Detection Details", language="json")
+                        
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 📊 Prediction Result")
+                        output_img = gr.Image(label="Prediction Result", type="pil",height=400)
+                        result_details = gr.Code(label="Detection Details", language="json", elem_id="detection_details_code",lines=10)
 
                 # --- Events for Predict Tab ---
                 
@@ -644,8 +899,7 @@ def load_dataset_interface(app_interface, app):
     def update_dataset_dropdown_and_display(datasets):
         """Update both dropdown choices and HTML display"""
         choices = [d["name"] for d in datasets]
-        html = app.create_dataset_html()
-        return gr.update(choices=choices, value=None), html
+        return gr.update(choices=choices, value=None)
 
     def update_formatted_dataset_dropdown_and_display(datasets):
         """Update both dropdown choices and HTML display"""
@@ -655,14 +909,14 @@ def load_dataset_interface(app_interface, app):
     def refresh_all_components():
         """Refresh all dataset-related components"""
         updated_datasets = refresh_datasets_state()
-        dropdown_update, html_update = update_dataset_dropdown_and_display(updated_datasets)
+        dropdown_update = update_dataset_dropdown_and_display(updated_datasets)
         
         # Refresh CVAT tasks as well
         # Note: We assume project_id is None since the project dropdown is hidden/unused currently
         cvat_tasks = app.get_cvat_tasks(cvat_projects_dropdown.value)
         cvat_tasks_update = gr.update(choices=cvat_tasks)
         
-        return updated_datasets, dropdown_update, html_update, "Datasets & Tasks refreshed!", cvat_tasks_update
+        return updated_datasets, dropdown_update, "Datasets & Tasks refreshed!", cvat_tasks_update
 
     def refresh_formatted_dropdown():
         """Refresh formatted dataset dropdown"""
@@ -684,7 +938,7 @@ def load_dataset_interface(app_interface, app):
         # video_files is list of dicts. 
         # DF expects list of [Name, Duration, Interval]
         if has_videos:
-             df_data = [[v["Video Name"], v["Duration"], v["Extraction Interval"]] for v in video_files]
+             df_data = [[v["Video Name"], v["Duration"]] for v in video_files]
              return msg, gr.update(visible=True), df_data
         else:
              return msg, gr.update(visible=False), None
@@ -695,8 +949,20 @@ def load_dataset_interface(app_interface, app):
         outputs=[status_output, video_config_group, video_dataframe]
     )
 
-    def on_annotate_click(dataset_name, video_df):
-        # Check if we have video data to process
+    def on_annotate_click(dataset_name, video_df, interval_val):
+        # 1. Validation
+        if not dataset_name:
+            return (
+                "⚠️ Please select a dataset first", 
+                gr.update(), # No tab switch
+                gr.update(), # No dropdown update
+                gr.update(), # No image update
+                gr.update()  # No gallery update
+            )
+            
+        target_dataset = dataset_name
+        
+        # 2. Check for video processing
         import pandas as pd
         has_data = False
         if isinstance(video_df, pd.DataFrame):
@@ -704,46 +970,50 @@ def load_dataset_interface(app_interface, app):
         elif isinstance(video_df, list):
             has_data = len(video_df) > 0
             
-        if has_data and dataset_name:
-            # Check if there are any actual rows (sometimes empty list might pass through)
-            # Actually, let's just try extraction. If scan_for_videos found nothing, user won't see the group, 
-            # but Gradio passes the hidden state value.
-            # We should rely on whether the dataframe is actually populated with valid data.
-            
-            # Re-scan to double check? No, expensive.
-            # Just trust the dataframe input.
-            
-            # Logic: If dataframe has content, perform extraction.
-            # Note: If the group was hidden, dataframe might still have old value? 
-            # Gradio usually creates fresh component instance but let's be careful.
-            # We can check visibility? No, inputs don't pass visibility.
-            
-            # Simple check: does the dataframe have rows?
-            if len(video_df) > 0:
-                 app.extract_frames_from_dataset(dataset_name, video_df)
-                 # New dataset is now selected inside app logic.
+        if has_data:
+             # This creates a temp dataset and selects it in app
+             success, result = app.extract_frames_from_dataset(dataset_name, video_df, interval_val=interval_val)
+             if success:
+                 target_dataset = result
+        else:
+             # Just select the regular dataset
+             app.select_dataset(target_dataset)
         
-        return None # Proceed to JS redirect
+        # 3. Prepare Updates
+        # Refresh datasets list in case a temp dataset was just created
+        all_datasets = app.get_all_datasets()
+        choices = [d["name"] for d in all_datasets]
+        
+        # Get first image of the target dataset
+        # Note: app.selected_dataset is already updated by select_dataset/extract_frames
+        img = load_selected_img() 
+        gallery_imgs = get_dataset_images_for_gallery()
+
+        return (
+            f"✅ Loaded {target_dataset}", 
+            gr.update(selected="vlm_tab"), 
+            gr.update(choices=choices, value=target_dataset),
+            img,
+            gallery_imgs
+        )
 
     annotate_btn.click(
         fn=on_annotate_click,
-        inputs=[dataset_dropdown, video_dataframe],
-        outputs=None
-    ).then(
-        None, None, None, js="() => window.location.href = '/vlm'"
+        inputs=[dataset_dropdown, video_dataframe, interval_slider],
+        outputs=[status_output, tabs, vlm_dataset_dropdown, vlm_image_input, vlm_gallery]
     )
     
     delete_btn.click(
         fn=lambda dataset_name, datasets: (
             delete_dataset_handler(dataset_name) if dataset_name 
-            else ("Please select a dataset first", datasets, app.create_dataset_html())
+            else ("Please select a dataset first", datasets)
         ),
         inputs=[dataset_dropdown, datasets_state],
-        outputs=[status_output, datasets_state, datasets_display]
+        outputs=[delete_status, datasets_state]
     ).then(
         fn=update_dataset_dropdown_and_display,
         inputs=datasets_state,
-        outputs=[dataset_dropdown, datasets_display]
+        outputs=[dataset_dropdown]
     )
     
     upload_btn.click(
@@ -753,13 +1023,60 @@ def load_dataset_interface(app_interface, app):
     ).then(
         fn=update_dataset_dropdown_and_display,
         inputs=datasets_state,
-        outputs=[dataset_dropdown, datasets_display]
+        outputs=[dataset_dropdown]
     )
+
+    def cleanup_and_refresh_ui():
+        """Cleanup temp datasets and refresh all dropdowns"""
+        # 1. Cleanup backend
+        app.cleanup_temp_datasets()
+        
+        # 2. Get fresh list
+        all_datasets = app.get_all_datasets()
+        choices = [d["name"] for d in all_datasets]
+        
+        # 3. Return updates for both dropdowns
+        # Select the first available option if choices exist, else None
+        new_val = choices[0] if choices else None
+        
+        # We also need to tell the app about this selection change implicitly?
+        # Ideally we should trigger a selection event, but setting the value here updates the UI.
+        
+        return (
+            gr.update(choices=choices, value=new_val), # For dataset_dropdown (Home)
+            gr.update(choices=choices, value=new_val)  # For vlm_dataset_dropdown (VLM)
+        )
+
+    # Bind cleanup to all non-VLM tabs
+    # We need to target the tab objects defined earlier: 
+    # upload_tab, train_tab, predict_tab, about_tab
+    
+    # Note: We need to ensure we are updating the correct components.
+    # dataset_dropdown is in local scope here.
+    # vlm_dataset_dropdown is inside load_dataset_interface but we need access to it.
+    # Actually vlm_dataset_dropdown is defined deeper in the scope. 
+    # To fix this properly, we should define this helper earlier or ensure variable access.
+    # However, gradio components are objects, if we can't reach them, we can't update them.
+
+    # REFACTOR STRATEGY: 
+    # vlm_dataset_dropdown is defined inside `with gr.Tab("VLM Annotation", ...)` block.
+    # We need to make sure we return it or have access to it.
+    # In this function `load_dataset_interface`, `vlm_dataset_dropdown` is a local variable 
+    # defined around line 196. Since `cleanup_and_refresh_ui` is also inside `load_dataset_interface`,
+    # it captures `vlm_dataset_dropdown` via closure. So this is safe.
+
+    common_inputs = [] 
+    common_outputs = [dataset_dropdown, vlm_dataset_dropdown]
+
+    upload_select_tab.select(fn=cleanup_and_refresh_ui, inputs=common_inputs, outputs=common_outputs)
+    train_tab.select(fn=cleanup_and_refresh_ui, inputs=common_inputs, outputs=common_outputs)
+    predict_tab.select(fn=cleanup_and_refresh_ui, inputs=common_inputs, outputs=common_outputs)
+    about_tab.select(fn=cleanup_and_refresh_ui, inputs=common_inputs, outputs=common_outputs)
     
     # Initialize the interface
     app_interface.load(
         fn=refresh_all_components,
-        outputs=[datasets_state, dataset_dropdown, datasets_display, status_output, cvat_tasks_dropdown]
+        outputs=[datasets_state, dataset_dropdown, status_output, cvat_tasks_dropdown]
     )
 
 if __name__ == "__main__":

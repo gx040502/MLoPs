@@ -56,18 +56,9 @@ class APP():
                     self.selected_dataset_1st_img_path = ''
             else:
                 self.selected_dataset_1st_img_path = ''
-            html_msg = (
-                f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
-                f"background: var(--input-background-fill); border-radius: var(--container-radius); "
-                f"color: var(--body-text-color); min-height: 80px;'>"
-                f"<b>Selected dataset:</b> {name}<br>"
-                f"<b>Path:</b> {dataset.get('path', 'N/A')}"
-                f"</div>"
-            )
-            return True, html_msg
+            msg = f"Path: {dataset.get('path', 'N/A')}"
+            return True, msg
         return False, f"Dataset '{name}' not found."
-
-    # ... existing methods (omitted for brevity) ...
 
     # -------------------------------------------------------------------------
     #                         PREDICT MODEL LOGIC
@@ -924,11 +915,11 @@ class APP():
             except ValueError:
                 return 1.0 # Default fallback
 
-    def extract_frames_from_dataset(self, dataset_name, video_config_df):
+    def extract_frames_from_dataset(self, dataset_name, video_config_df, interval_val=1.0):
         """
         Creates a temporary dataset with extracted frames + original images.
-        video_config_df is a pandas DataFrame or list of dicts with columns: 
-        ["Video Name", "Duration", "Extraction Interval"]
+        video_config_df is a pandas DataFrame or list containing video info.
+        interval_val: float (seconds)
         """
         success, dataset = self.get_dataset_by_name(dataset_name)
         if not success:
@@ -951,20 +942,17 @@ class APP():
                 
         # 3. Process Videos
         # Convert df to list of dicts if needed (pandas df to records)
-        # Gradio dataframe usually returns a list of lists or pandas df depending on `type` param?
-        # Assuming we check type.
+        # We need to know column types. Assumed order: Name, Duration, (Interval ignored)
         
         # If input is pandas DataFrame
         import pandas as pd
         if isinstance(video_config_df, pd.DataFrame):
             config_records = video_config_df.to_dict('records')
         else:
-            # If it's a list of lists (Gradio default sometimes) or list of dicts
-            # We need to know column types. Assumed order: Name, Duration, Interval
             if isinstance(video_config_df, list):
                 if len(video_config_df) > 0 and isinstance(video_config_df[0], list):
                      config_records = [
-                         {"Video Name": r[0], "Duration": r[1], "Extraction Interval": r[2]} 
+                         {"Video Name": r[0], "Duration": r[1]} 
                          for r in video_config_df
                      ]
                 else:
@@ -972,10 +960,17 @@ class APP():
             else:
                  config_records = []
 
+        # Calculate target interval in seconds
+        try:
+            val = float(interval_val)
+        except:
+            val = 1.0
+            
+        target_interval_sec = val
+
         for record in config_records:
             video_name = record.get("Video Name")
-            interval_str = str(record.get("Extraction Interval", "1s"))
-            interval_sec = self.parse_interval(interval_str)
+            interval_sec = target_interval_sec
             
             video_path = os.path.join(source_path, video_name)
             if not os.path.exists(video_path):
@@ -1021,6 +1016,25 @@ class APP():
         self.select_dataset(temp_name) # Switch to this dataset
         
         return True, temp_name
+
+    def cleanup_temp_datasets(self):
+        """
+        Removes any datasets with names ending in '_temp_frames'.
+        Used to clean up temporary datasets created for video inference.
+        """
+        temp_suffix = "_temp_frames"
+        datasets_to_remove = [d["name"] for d in self.config.get("datasets", []) if d["name"].endswith(temp_suffix)]
+        
+        removed_count = 0
+        for name in datasets_to_remove:
+            success, msg = self.remove_dataset(name)
+            if success:
+                removed_count += 1
+                # print(f"Cleaned up temp dataset: {name}") # Optional logging
+            else:
+                print(f"Failed to clean up temp dataset {name}: {msg}")
+                
+        return removed_count
 
     def draw_bounding_boxes(self, image, detections, threshold=0.3):
         """
@@ -1149,7 +1163,18 @@ class APP():
     def inference_dataset(self, prompt='.',  confidence_threshold=0.3):
         
         sel_dataset = self.selected_dataset
-        dataset_dir = Path(self.get_dataset_by_name(sel_dataset)[1].get('path', '')) # try to change this path to the path of the dataset containing the video frame
+        success, dataset_info = self.get_dataset_by_name(sel_dataset)
+        
+        if not success:
+             return (
+                f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
+                f"background: var(--input-background-fill); border-radius: var(--container-radius); "
+                f"color: var(--body-text-color); min-height: 80px;'>"
+                f"❌ Error: Dataset '{sel_dataset}' not found or has been cleaned up."
+                f"</div>"
+            )
+
+        dataset_dir = Path(dataset_info.get('path', ''))
 
         output_dir = Path(self.datasets_dir).parent / '.output' / f"{self.selected_dataset}_coco" 
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1343,6 +1368,15 @@ class APP():
                 )
                 
                 task_url = f"{url.rstrip('/')}/tasks/{task.id}"
+                
+                # Cleanup output directory after successful upload
+                shutil.rmtree(output_dir, ignore_errors=True)
+                
+                # Also remove the generated zip file
+                zip_path = output_dir.with_suffix(".zip")
+                if zip_path.exists():
+                    zip_path.unlink()
+                
                 return (
                     f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
                     f"background: var(--input-background-fill); border-radius: var(--container-radius); "

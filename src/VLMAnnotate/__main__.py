@@ -4,7 +4,7 @@ from . import utils
 
 from .app import APP
 from .page_datasets import load_dataset_interface
-from .page_vlm_annotation import load_vlm_interface
+
 
 def main():
     # Initialize the app
@@ -12,11 +12,20 @@ def main():
     gdino = utils.GroundingDINODetector(model_id)
     app = APP(gdino)
 
-    with gr.Blocks(theme=gr.themes.Soft(), title="See.AI Agent") as app_interface:
+    custom_css = """
+    #detection_details_code .cm-scroller {
+        max-height: 180px !important; 
+        overflow-y: auto !important;
+    }
+    #cvat_project_dd .wrap,
+    #cvat_project_dd .wrap input {
+         min-height: 26px !important; 
+    }
+    """
+
+    with gr.Blocks(css=custom_css, theme=gr.themes.Soft(), title="See.AI Agent") as app_interface:
         load_dataset_interface(app_interface, app)
 
-    with app_interface.route("vlm") as vlm_page:
-        load_vlm_interface(vlm_page, app)
 
     # Get absolute path to .gradio folder to satisfy allowed_paths requirements
     # Assuming CWD is the project root /home/intern/Gitlab/pipeline

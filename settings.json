@@ -17,9 +17,8 @@
             "path": "./.gradio/DEMO"
         },
         {
-            "name": "DEMO_temp_frames",
-            "path": "./.gradio/DEMO_temp_frames",
-            "is_temp": true
+            "name": "DEMO - Copy",
+            "path": "./.gradio/DEMO - Copy"
         }
     ],
     "formatted_datasets": [
