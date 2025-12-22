@@ -109,6 +109,53 @@ class APP():
         
         return sorted(models_list)
 
+    def get_test_images(self, project_name):
+        """
+        Returns a list of image paths from Dataset/{project_name}/images/Test
+        """
+        if not project_name: return []
+        
+        # Dataset assumes CWD is project root
+        test_dir = Path("Dataset") / project_name / "images" / "Test"
+        if not test_dir.exists():
+            return []
+            
+        images = []
+        valid_exts = ['.jpg', '.jpeg', '.png', '.bmp']
+        for img_path in test_dir.iterdir():
+            if img_path.is_file() and img_path.suffix.lower() in valid_exts:
+                images.append(str(img_path.resolve()))
+                
+        # Limit to avoid overloading UI if too many
+        return sorted(images)[:50] 
+
+    def get_model_plots(self, project_name, model_name):
+        """
+        Returns list of plot images from 1.Train/{project}/{model}/...
+        Specific files: BoxF1_curve, BoxP_curve, BoxPR_curve, BoxR_curve,
+        confusion_matrix_normalized, confusion_matrix, labels, results.
+        """
+        if not project_name or not model_name: return []
+        
+        model_dir = self.train_root_dir / project_name / model_name
+        if not model_dir.exists(): return []
+        
+        targets = [
+            "BoxF1_curve.png", "BoxP_curve.png", "BoxPR_curve.png", "BoxR_curve.png",
+            "confusion_matrix_normalized.png", "confusion_matrix.png",
+            "labels.jpg", "labels.png", "results.png", "results.jpg"
+        ]
+        
+        plots = []
+        for t in targets:
+            p = model_dir / t
+            if p.exists():
+                plots.append((p.stem, str(p.resolve())))
+                
+        # Return list of (label, path) tuples for Gallery, or just paths?
+        # Gradio Gallery accepts list of (path, label) tuples.
+        return [(path, label) for label, path in plots]
+
     def get_model_details(self, project_name, model_name):
         """Returns details about the selected model."""
         if not project_name or not model_name:
@@ -139,7 +186,7 @@ class APP():
             model = YOLO(model_path)
             
             # Run inference
-            results = model.predict(image, conf=conf_threshold, iou=iou_threshold)
+            results = model.predict(image, conf=conf_threshold, iou=iou_threshold,device='cpu')
             
             # Plot results on the image (returns numpy array in BGR)
             res_plotted = results[0].plot() 
@@ -609,6 +656,8 @@ class APP():
                         new_yaml_lines.append(f"train: {abs_target_dir / 'Train.txt'}\n")
                     elif line.strip().startswith("val:"):
                         new_yaml_lines.append(f"val: {abs_target_dir / 'Validation.txt'}\n")
+                    elif line.strip().startswith("test:"):
+                        new_yaml_lines.append(f"test: {abs_target_dir / 'Test.txt'}\n")
                     else:
                         new_yaml_lines.append(line)
                 
@@ -616,7 +665,7 @@ class APP():
                     f.writelines(new_yaml_lines)
             
             # 2. Update Train.txt and Validation.txt
-            for txt_name in ["Train.txt", "Validation.txt"]:
+            for txt_name in ["Train.txt", "Validation.txt", "Test.txt"]:
                 txt_path = target_dir / txt_name
                 if txt_path.exists():
                     with open(txt_path, 'r') as f:
@@ -1308,178 +1357,250 @@ class APP():
         except Exception as e:
             return f"❌ Error creating CVAT task: {str(e)}"
     
-    def process_cvat_task(self, task_id, custom_name=None):
-        """
-        Downloads a task from CVAT and immediately formats it for training.
-        """
-        print(f"DEBUG: Processing CVAT Task {task_id}, Custom Name: {custom_name}")
-        if not task_id:
-            return "❌ Error: No task selected.", None
-            
-        url = self.config.get("cvat_url")
-        username = self.config.get("cvat_username")
-        password = self.config.get("cvat_password")
-        
-        # --- PHASE 1: DOWNLOAD ---
-        
-        # Sanitize URL for Configuration
-        host = url.split('/projects')[0].split('/tasks')[0].split('jobs')[0].rstrip('/')
-        
-        raw_zip_path = Path(self.datasets_dir) / f"cvat_task_{task_id}.zip"
-        
-        try:
-            print(f"Connecting to CVAT to download Task {task_id} (High-Level)...")
-            # Use High-Level 'make_client'
-            with make_client(host, credentials=(username, password)) as client:
-                task = client.tasks.retrieve(int(task_id))
-                
-                print("Exporting dataset... this may take a while.")
-                
-                # Ensure directory exists
-                raw_zip_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                # Remove existing file if present to avoid FileExistsError
-                if raw_zip_path.exists():
-                    raw_zip_path.unlink()
-                
-                # High-level export_dataset handles polling and downloading
-                task.export_dataset(
-                    format_name="Ultralytics YOLO Detection 1.0",
-                    filename=str(raw_zip_path),
-                    include_images=True
-                )
-                print(f"Success! Raw Dataset downloaded to {raw_zip_path}")
-        except Exception as e:
-            print(f"Detailed Error: {e}")
-            return f"❌ Error downloading task: {str(e)}", None
-
-        # --- PHASE 2: FORMAT ---
-        
-        # Determine output filename
-        if custom_name and custom_name.strip():
-            safe_name = custom_name.strip()
-            if not safe_name.lower().endswith('.zip'):
-                safe_name += '.zip'
-            formatted_zip_path = Path(self.datasets_dir) / safe_name
-            dataset_entry_name = safe_name.replace('.zip', '')
-        else:
-            formatted_zip_path = Path(self.datasets_dir) / f"formatted_task_{task_id}.zip"
-            dataset_entry_name = f"Task_{task_id}"
-        
-        # Temporary directories
-        # Use str(task_id) to ensure it's part of the path name correctly
-        temp_extract_dir = Path(self.datasets_dir) / f"temp_extract_{task_id}_{int(time.time())}"
-        temp_build_dir = Path(self.datasets_dir) / f"temp_build_{task_id}_{int(time.time())}"
-        
-        try:
-            # 1. Extract existing zip
-            with zipfile.ZipFile(raw_zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_extract_dir)
-            
-            # 2. Locate images and labels
-            src_images_dir = temp_extract_dir / "images" / "train"
-            src_labels_dir = temp_extract_dir / "labels" / "train"
-            
-            if not src_images_dir.exists():
-                return f"❌ Error: 'images/train' folder not found in download.", None
-
-            images = [f for f in src_images_dir.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']]
-            
-            # 3. Shuffle and Split 70/30
-            random.seed(42)
-            random.shuffle(images)
-            split_idx = int(len(images) * 0.7)
-            train_images = images[:split_idx]
-            val_images = images[split_idx:]
-            
-            print(f"Total images: {len(images)}. Train: {len(train_images)}, Val: {len(val_images)}")
-
-            # 4. Prepare New Structure
-            dirs_to_create = [
-                temp_build_dir / "images" / "Train",
-                temp_build_dir / "images" / "Validation",
-                temp_build_dir / "labels" / "Train",
-                temp_build_dir / "labels" / "Validation"
-            ]
-            for d in dirs_to_create:
-                d.mkdir(parents=True, exist_ok=True)
-            
-            train_txt_lines = []
-            val_txt_lines = []
-            
-            # Helper to move and track
-            def process_files(file_list, dest_subset, txt_list):
-                for img_path in file_list:
-                    # Move Image
-                    shutil.copy2(img_path, temp_build_dir / "images" / dest_subset / img_path.name)
-                    
-                    # Move Label
-                    label_name = img_path.stem + ".txt"
-                    src_label = src_labels_dir / label_name
-                    if src_label.exists():
-                        shutil.copy2(src_label, temp_build_dir / "labels" / dest_subset / label_name)
-                    
-                    # Add to manifest
-                    txt_list.append(f"./images/{dest_subset}/{img_path.name}")
-
-            # 5. Move files
-            process_files(train_images, "Train", train_txt_lines)
-            process_files(val_images, "Validation", val_txt_lines)
-            
-            # 6. Write txt files
-            with open(temp_build_dir / "Train.txt", "w") as f:
-                f.write("\n".join(train_txt_lines))
-                
-            with open(temp_build_dir / "Validation.txt", "w") as f:
-                f.write("\n".join(val_txt_lines))
-                
-            # 7. Modify data.yaml
-            orig_yaml = temp_extract_dir / "data.yaml"
-            if orig_yaml.exists():
-                with open(orig_yaml, 'r') as f:
-                    yaml_content = f.read()
-                
-                filtered_lines = [l for l in yaml_content.splitlines() if not (l.strip().startswith('train:') or l.strip().startswith('val:') or l.strip().startswith('validation:'))]
-                final_yaml_content = "train: Train.txt\nval: Validation.txt\n" + "\n".join(filtered_lines)
-                
-                with open(temp_build_dir / "data.yaml", "w") as f:
-                    f.write(final_yaml_content)
-            
-            # 8. Zip it up
-            formatted_zip_path.parent.mkdir(parents=True, exist_ok=True)
-            if formatted_zip_path.exists():
-                formatted_zip_path.unlink()
-                
-            shutil.make_archive(str(formatted_zip_path).replace('.zip', ''), 'zip', temp_build_dir)
-            
-            # 9. Cleanup
-            shutil.rmtree(temp_extract_dir, ignore_errors=True)
-            shutil.rmtree(temp_build_dir, ignore_errors=True)
-
-            # Update Config logic for formatted dataset
-            if "formatted_datasets" not in self.config:
-                self.config["formatted_datasets"] = []
-            
-            # name_entry is now determined above as dataset_entry_name
-            self.config["formatted_datasets"].append({"name": dataset_entry_name, "path": str(formatted_zip_path)})
-            self.save_config()
-                
-            print(f"Success! Formatted Dataset saved to {formatted_zip_path}")
-            
-            # 10. Cleanup Raw Zip
-            if raw_zip_path.exists():
-                raw_zip_path.unlink()
-                print(f"Cleaned up raw download: {raw_zip_path}")
-
-            return f"✅ Downloaded & Formatted Successfully!\nPath: {formatted_zip_path}", str(formatted_zip_path)
-            
-        except Exception as e:
             # Cleanup on fail
             if 'temp_extract_dir' in locals(): shutil.rmtree(temp_extract_dir, ignore_errors=True)
             if 'temp_build_dir' in locals(): shutil.rmtree(temp_build_dir, ignore_errors=True)
             
             print(f"Detailed Error: {e}")
             return f"❌ Error during formatting: {str(e)}", None
+
+    def _download_and_format_task(self, task_id, output_zip_path, split_ratios=(70, 20, 10)):
+        """
+        Helper method to download and format a task to a specific location.
+        Returns (SuccessBool, Message)
+        split_ratios: tuple of (train, val, test) percentages. Should sum roughly to 100.
+        """
+        output_zip_path = Path(output_zip_path)
+        print(f"DEBUG: Internal Processing CVAT Task {task_id} -> {output_zip_path}")
+        
+        url = self.config.get("cvat_url")
+        username = self.config.get("cvat_username")
+        password = self.config.get("cvat_password")
+        
+        # --- PHASE 1: DOWNLOAD ---
+        host = url.split('/projects')[0].split('/tasks')[0].split('jobs')[0].rstrip('/')
+        raw_zip_path = Path(self.datasets_dir) / f"cvat_task_{task_id}.zip"
+        
+        try:
+            print(f"Connecting to CVAT to download Task {task_id}...")
+            with make_client(host, credentials=(username, password)) as client:
+                task = client.tasks.retrieve(int(task_id))
+                raw_zip_path.parent.mkdir(parents=True, exist_ok=True)
+                if raw_zip_path.exists():
+                    raw_zip_path.unlink()
+                
+                task.export_dataset(
+                    format_name="Ultralytics YOLO Detection 1.0",
+                    filename=str(raw_zip_path),
+                    include_images=True
+                )
+        except Exception as e:
+            return False, f"Error downloading: {str(e)}"
+
+        # --- PHASE 2: FORMAT ---
+        temp_extract_dir = Path(self.datasets_dir) / f"temp_extract_{task_id}_{int(time.time())}"
+        temp_build_dir = Path(self.datasets_dir) / f"temp_build_{task_id}_{int(time.time())}"
+        
+        try:
+            with zipfile.ZipFile(raw_zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_extract_dir)
+            
+            src_images_dir = temp_extract_dir / "images" / "train"
+            src_labels_dir = temp_extract_dir / "labels" / "train"
+            
+            if not src_images_dir.exists():
+                return False, "Error: 'images/train' not found."
+
+            images = [f for f in src_images_dir.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']]
+            
+            # Shuffle and Split based on ratios
+            random.seed(42)
+            random.shuffle(images)
+            n_total = len(images)
+            
+            # Normalize ratios to ensure they sum to 100 (or handle raw counts, but percents are easier)
+            r_train, r_val, r_test = split_ratios
+            total_r = r_train + r_val + r_test
+            if total_r == 0: total_r = 100 # Avoid div by zero
+            
+            n_train = int(n_total * (r_train / total_r))
+            n_val = int(n_total * (r_val / total_r))
+            # Assign remaining to test to ensure all images are used (and handle rounding errors)
+            n_test = n_total - n_train - n_val
+            
+            train_images = images[:n_train]
+            val_images = images[n_train:n_train+n_val]
+            test_images = images[n_train+n_val:]
+            
+            # Prepare Structure
+            dirs_to_create = [
+                temp_build_dir / "images" / "Train",
+                temp_build_dir / "images" / "Validation",
+                temp_build_dir / "images" / "Test",
+                temp_build_dir / "labels" / "Train",
+                temp_build_dir / "labels" / "Validation",
+                temp_build_dir / "labels" / "Test"
+            ]
+            for d in dirs_to_create:
+                d.mkdir(parents=True, exist_ok=True)
+            
+            train_txt_lines = []
+            val_txt_lines = []
+            test_txt_lines = []
+            
+            def process_files(file_list, dest_subset, txt_list):
+                for img_path in file_list:
+                    shutil.copy2(img_path, temp_build_dir / "images" / dest_subset / img_path.name)
+                    label_name = img_path.stem + ".txt"
+                    src_label = src_labels_dir / label_name
+                    if src_label.exists():
+                        shutil.copy2(src_label, temp_build_dir / "labels" / dest_subset / label_name)
+                    txt_list.append(f"./images/{dest_subset}/{img_path.name}")
+
+            process_files(train_images, "Train", train_txt_lines)
+            process_files(val_images, "Validation", val_txt_lines)
+            process_files(test_images, "Test", test_txt_lines)
+            
+            with open(temp_build_dir / "Train.txt", "w") as f: f.write("\n".join(train_txt_lines))
+            with open(temp_build_dir / "Validation.txt", "w") as f: f.write("\n".join(val_txt_lines))
+            with open(temp_build_dir / "Test.txt", "w") as f: f.write("\n".join(test_txt_lines))
+                
+            # Modify data.yaml
+            orig_yaml = temp_extract_dir / "data.yaml"
+            if orig_yaml.exists():
+                with open(orig_yaml, 'r') as f:
+                    yaml_content = f.read()
+                filtered_lines = [l for l in yaml_content.splitlines() if not (l.strip().startswith('train:') or l.strip().startswith('val:') or l.strip().startswith('validation:') or l.strip().startswith('test:'))]
+                final_yaml_content = "train: Train.txt\nval: Validation.txt\ntest: Test.txt\n" + "\n".join(filtered_lines)
+                with open(temp_build_dir / "data.yaml", "w") as f:
+                    f.write(final_yaml_content)
+            
+            # Zip
+            output_zip_path.parent.mkdir(parents=True, exist_ok=True)
+            if output_zip_path.exists():
+                output_zip_path.unlink()
+            shutil.make_archive(str(output_zip_path).replace('.zip', ''), 'zip', temp_build_dir)
+            
+            # Cleanup Raw
+            if raw_zip_path.exists(): raw_zip_path.unlink()
+            
+            return True, "Success"
+            
+        except Exception as e:
+            return False, f"Format Error: {str(e)}"
+        finally:
+            if temp_extract_dir.exists(): shutil.rmtree(temp_extract_dir, ignore_errors=True)
+            if temp_build_dir.exists(): shutil.rmtree(temp_build_dir, ignore_errors=True)
+
+
+    def process_cvat_task(self, task_id, custom_name=None, split_ratios=(70, 20, 10)):
+        """
+        Public wrapper to download/format and register the dataset.
+        """
+        if not task_id: return "❌ Error: No task selected.", None
+
+        # Determine output filename
+        if custom_name and custom_name.strip():
+            safe_name = custom_name.strip()
+            if not safe_name.lower().endswith('.zip'): safe_name += '.zip'
+            formatted_zip_path = Path(self.datasets_dir) / safe_name
+            dataset_entry_name = safe_name.replace('.zip', '')
+        else:
+            formatted_zip_path = Path(self.datasets_dir) / f"formatted_task_{task_id}.zip"
+            dataset_entry_name = f"Task_{task_id}"
+            
+        success, msg = self._download_and_format_task(task_id, formatted_zip_path, split_ratios)
+        
+        if not success:
+            return f"❌ {msg}", None
+            
+        # Register in Config
+        if "formatted_datasets" not in self.config:
+            self.config["formatted_datasets"] = []
+        
+        # Check redundancy/Update
+        existing = next((item for item in self.config["formatted_datasets"] if item["name"] == dataset_entry_name), None)
+        if not existing:
+             self.config["formatted_datasets"].append({"name": dataset_entry_name, "path": str(formatted_zip_path)})
+             self.save_config()
+             
+        return f"✅ Downloaded & Formatted Successfully!\\nPath: {formatted_zip_path}", str(formatted_zip_path)
+
+    def cleanup_preview(self):
+        """Clean up all temporary preview files"""
+        try:
+             # Find all regular preview zips
+             for p in Path(self.datasets_dir).glob("temp_preview_task_*.zip"):
+                 p.unlink()
+             # Find all temp inspect folders
+             for p in Path(self.datasets_dir).glob("temp_inspect_*"):
+                 if p.is_dir(): shutil.rmtree(p)
+        except Exception as e:
+            print(f"Cleanup warning: {e}")
+
+    def _sanitize_stats_for_json(self, data):
+        """Recursively ensure all dictionary keys are strings for JSON compatibility."""
+        if isinstance(data, dict):
+            return {str(k): self._sanitize_stats_for_json(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._sanitize_stats_for_json(i) for i in data]
+        else:
+            return data
+
+    def inspect_dataset_zip(self, zip_path):
+        """
+        Inspect a local dataset zip file and return stats.
+        """
+        if not zip_path: return {"status": "Error", "message": "No path provided"}
+        
+        zip_path = Path(zip_path)
+        if not zip_path.exists():
+             return {"status": "Error", "message": f"File not found: {zip_path}"}
+             
+        # Extract to temp inspect folder
+        import time
+        import shutil
+        import zipfile
+        
+        temp_inspect_dir = Path(self.datasets_dir) / f"temp_inspect_{int(time.time())}_{random.randint(1000,9999)}"
+        
+        try:
+            temp_inspect_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_inspect_dir)
+                
+            # Gather Stats
+            stats = {
+                "status": "Ready",
+                "zip_path": str(zip_path),
+                "images": {},
+                "labels": {},
+                "classes": 0,
+                "class_names": []
+            }
+            
+            for subset in ["Train", "Validation", "Test"]:
+                img_dir = temp_inspect_dir / "images" / subset
+                lbl_dir = temp_inspect_dir / "labels" / subset
+                stats["images"][subset] = len(list(img_dir.iterdir())) if img_dir.exists() else 0
+                stats["labels"][subset] = len(list(lbl_dir.iterdir())) if lbl_dir.exists() else 0
+                
+            yaml_path = temp_inspect_dir / "data.yaml"
+            if yaml_path.exists():
+                with open(yaml_path, 'r') as f:
+                    import yaml
+                    data = yaml.safe_load(f)
+                    stats["classes"] = data.get('nc', 0)
+                    stats["class_names"] = data.get('names', [])
+            
+            # Apply robust sanitization before returning
+            return self._sanitize_stats_for_json(stats)
+            
+        except Exception as e:
+            print(f"Error inspecting zip: {e}")
+            return {"status": "Error", "message": str(e)}
+        finally:
+            if temp_inspect_dir.exists(): shutil.rmtree(temp_inspect_dir)
 
 if __name__ == "__main__":
     # Load model into device: GPU or CPU

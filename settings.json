@@ -13,83 +13,27 @@
             "path": "./.gradio/globe"
         },
         {
-            "name": "HHF22430099_1_1_P_2",
-            "path": "./.gradio/HHF22430099_1_1_P_2"
+            "name": "DEMO",
+            "path": "./.gradio/DEMO"
         },
         {
-            "name": "HHF22430099_1_1_P_3",
-            "path": "./.gradio/HHF22430099_1_1_P_3"
-        },
-        {
-            "name": "HHF22430099_1_1_P_3",
-            "path": "./.gradio/HHF22430099_1_1_P_3"
-        },
-        {
-            "name": "VID20251218101446",
-            "path": "./.gradio/VID20251218101446"
-        },
-        {
-            "name": "VID20251218101446_temp_frames",
-            "path": "./.gradio/VID20251218101446_temp_frames",
+            "name": "DEMO_temp_frames",
+            "path": "./.gradio/DEMO_temp_frames",
             "is_temp": true
         }
     ],
     "formatted_datasets": [
         {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
+            "name": "Task_716",
+            "path": ".gradio/formatted_task_716.zip"
         },
         {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
+            "name": "Task_720",
+            "path": ".gradio/formatted_task_720.zip"
         },
         {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_706",
-            "path": ".gradio/formatted_task_706.zip"
-        },
-        {
-            "name": "Task_713",
-            "path": ".gradio/formatted_task_713.zip"
-        },
-        {
-            "name": "Task_715",
-            "path": ".gradio/formatted_task_715.zip"
+            "name": "Task_721",
+            "path": ".gradio/formatted_task_721.zip"
         }
     ]
 }

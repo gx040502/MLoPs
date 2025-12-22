@@ -1,2 +1,0 @@
-/home/intern/Gitlab/pipeline/Dataset/Task_706/images/Validation/HE_0_0_C.jpg
-/home/intern/Gitlab/pipeline/Dataset/Task_706/images/Validation/HE_0_0_L.jpg

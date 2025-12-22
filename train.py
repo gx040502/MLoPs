@@ -31,6 +31,68 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
     try:
         # Load the model
         model = YOLO(model_path)
+
+        # --- ETA CALLBACK DEFINITION ---
+        import time
+        import json
+
+        class TrainingCallback:
+            def __init__(self, total_epochs, project_dir):
+                self.total_epochs = total_epochs
+                self.project_dir = Path(project_dir)
+                self.epoch_start_time = 0
+                self.first_epoch_duration = None
+                
+            def on_train_epoch_start(self, trainer):
+                self.epoch_start_time = time.time()
+                
+            def on_train_epoch_end(self, trainer):
+                duration = time.time() - self.epoch_start_time
+                current_epoch = trainer.epoch + 1 # 1-indexed for display
+                
+                # Logic: Use FIRST epoch duration as baseline for everything
+                if self.first_epoch_duration is None:
+                    self.first_epoch_duration = duration
+                
+                # Estimated TOTAL time
+                est_total_time = self.first_epoch_duration * self.total_epochs
+                
+                # Estimated REMAINING time
+                # We subtract the time already spent (which is approx first_epoch * current_epoch for this simple logic
+                # OR we just do first_epoch * remaining_epochs)
+                remaining_epochs = self.total_epochs - current_epoch
+                est_remaining_time = self.first_epoch_duration * remaining_epochs
+                
+                status_data = {
+                    "current_epoch": current_epoch,
+                    "total_epochs": self.total_epochs,
+                    "last_epoch_duration": duration,
+                    "first_epoch_duration": self.first_epoch_duration,
+                    "est_total_time": est_total_time,
+                    "est_time_remaining": est_remaining_time
+                }
+                
+                # Write to file
+                status_file = self.project_dir / "training_status.json"
+                try:
+                    with open(status_file, 'w') as f:
+                        json.dump(status_data, f)
+                except Exception as e:
+                    print(f"Warning: Could not write training status: {e}")
+
+        # Instantiate callback
+        # We need the project dir to save the status file. 
+        # project.train_dir is where results go (e.g. Dataset/Task_706/runs/detect/train)
+        # We want the status file to be easily accessible. Let's put it in the project root (Dataset/Task_706)
+        # project.dataset_dir is Dataset/Task_706
+        
+        callback = TrainingCallback(epochs, project.dataset_dir)
+        
+        # Register callbacks
+        model.add_callback("on_train_epoch_start", callback.on_train_epoch_start)
+        model.add_callback("on_train_epoch_end", callback.on_train_epoch_end)
+
+        # --- END CALLBACK DEFINITION ---
         
         # Prepare training arguments
         train_args = {
