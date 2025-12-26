@@ -1,4 +1,5 @@
 import gradio as gr
+from pathlib import Path
 import os
 import json
 import random
@@ -88,7 +89,7 @@ def load_dataset_interface(app_interface, app):
     """)
     
     with gr.Tabs() as tabs:
-        with gr.Tab("Upload and Select") as upload_select_tab:
+        with gr.Tab("📤 Upload and Select") as upload_select_tab:
 
            
             with gr.Row():
@@ -153,7 +154,7 @@ def load_dataset_interface(app_interface, app):
 
         # VLM ANNOTATION TAB
         
-        with gr.Tab("VLM Annotation", id="vlm_tab") as vlm_tab:
+        with gr.Tab("📝 VLM Annotation", id="vlm_tab") as vlm_tab:
             
             # --- VLM Code Integration ---
             gr.Markdown("## AI Agent to annotate data")
@@ -265,7 +266,7 @@ def load_dataset_interface(app_interface, app):
                         minimum=0.01, maximum=1.0, value=0.15, step=0.01, label="Confidence Threshold"
                     )
 
-                    detect_btn = gr.Button("🔍 Detect Objects", variant="primary", size="lg", elem_id="btn")
+                    detect_btn = gr.Button("🔍 Run On Image", variant="primary", size="lg", elem_id="btn")
                     clear_btn = gr.Button("🗑️ Clear", variant="secondary", elem_id="del_btn",visible=False)
                         
                     
@@ -280,7 +281,7 @@ def load_dataset_interface(app_interface, app):
                         visible=False
                     )
                     vlm_output_image = gr.Image(label="Detection Results", height=400)
-                    inference_btn = gr.Button("Inference Dataset", variant="primary", elem_id="btn")
+                    inference_btn = gr.Button("Inference Full Dataset", variant="primary", elem_id="btn")
                     inference_output = gr.HTML(
                         padding=False,
                         label="Reference Output",
@@ -452,18 +453,114 @@ def load_dataset_interface(app_interface, app):
                     visible=True, 
                     interactive=True
                 )
-
-                format_dropdown = gr.Dropdown(
-                    label="Choose Format",
-                    choices=["Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0","Ultralytics YOLO Classification 1.0"],
-                    value="Ultralytics YOLO Detection 1.0",
-                    interactive=True
+                with gr.Row():
+                    format_dropdown = gr.Dropdown(
+                        label="Choose Format",
+                        choices=["Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0","Ultralytics YOLO Classification 1.0"],
+                        value="Ultralytics YOLO Detection 1.0",
+                        interactive=True
+                    )
+                    
+                    model_dropdown = gr.Dropdown(
+                            choices=app.get_pretrained_models("Ultralytics YOLO Detection 1.0"),
+                            label="Select Pre-trained Model",
+                            interactive=True
+                        )
+                    
+                train_config_checkbox = gr.Checkbox(
+                    value=False,
+                    label="⚙️ Set Own Training Configuration"
                 )
 
-                
+                with gr.Group(visible=False) as train_config_group:
+                    gr.Markdown("### ⚙️ Training Configuration")
+                    with gr.Row():
+                        experiments_slider = gr.Slider(
+                            minimum=1, 
+                            maximum=1000, 
+                            value=100, 
+                            step=1, 
+                            label="Epochs"
+                        )
+                        
+                        imgsz_slider = gr.Slider(
+                            minimum=64, 
+                            maximum=1280, 
+                            value=640, 
+                            step=32, 
+                            label="Image Size"
+                        )
+                        
+                    gr.Markdown("#### 📊 Dataset Split Ratios (Must sum approx to 10)")
+                    with gr.Row():
+                        train_ratio = gr.Number(value=7, label="Train Ratio", precision=0)
+                        val_ratio = gr.Number(value=2, label="Validation Ratio", precision=0)
+                        test_ratio = gr.Number(value=1, label="Test Ratio", precision=0)
+                    
+                    manual_aug_checkbox = gr.Checkbox(
+                        value=False,
+                        label="Manual Adjust Augmentation"
+                    )
+                        
+                    base_image_state = gr.State(None)
+                        
+                    with gr.Group(visible=False) as aug_settings_group:
+                        with gr.Row():
+                            with gr.Column():
+                                aug_preview_img = gr.Image(label="Augmentation Preview", interactive=False,type="pil")
+                                gr.Markdown("### 👁️ Live Preview\nClick below to load a random image from the task to see how augmentations affect it.")
+                                load_sample_btn = gr.Button("🎲 Load New Sample", size="sm")
 
+                            with gr.Column():
+                                gr.Markdown("#### 🎨 Color Augmentation")
+                                with gr.Row():
+                                    hsv_h = gr.Slider(0.0, 1.0, value=0.015, step=0.001, label="HSV-Hue")
+                                    hsv_s = gr.Slider(0.0, 1.0, value=0.7, step=0.01, label="HSV-Saturation")
+                                with gr.Row():
+                                    hsv_v = gr.Slider(0.0, 1.0, value=0.4, step=0.01, label="HSV-Value")
+                                    bgr = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="BGR Flip Prob")
+
+                                gr.Markdown("#### 📐 Geometric Transforms")
+                                with gr.Row():
+                                    degrees = gr.Slider(-180, 180, value=0.0, step=1.0, label="Rotation (+/- deg)")
+                                    translate = gr.Slider(0.0, 1.0, value=0.1, step=0.01, label="Translate (+/- frac)")
+                                with gr.Row():
+                                    scale = gr.Slider(0.0, 2.0, value=0.5, step=0.01, label="Scale (+/- gain)")
+                                    shear = gr.Slider(-180, 180, value=0.0, step=1.0, label="Shear (+/- deg)")
+                                with gr.Row():
+                                    perspective = gr.Slider(0.0, 0.001, value=0.0, step=0.0001, label="Perspective")
+                                    flipud = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Flip Up-Down Prob")
+                                with gr.Row():
+                                    fliplr = gr.Slider(0.0, 1.0, value=0.5, step=0.01, label="Flip Left-Right Prob")
+
+                                gr.Markdown("#### 🔀 Advanced Mixing")
+                                with gr.Row():
+                                    mosaic = gr.Slider(0.0, 1.0, value=1.0, step=0.01, label="Mosaic Prob")
+                                    mixup = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Mixup Prob")
+                                with gr.Row():
+                                    cutmix = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Cutmix Prob")
+                                    copy_paste = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Copy-Paste Prob")
+
+                                gr.Markdown("#### ✨ Image Quality & Effects")
+                                with gr.Row():
+                                    erasing = gr.Slider(0.0, 0.9, value=0.4, step=0.01, label="Erasing %")
+
+                # Upload Own Dataset Toggle
+                upload_own_checkbox = gr.Checkbox(
+                    value=False,
+                    label="📤 Upload Own Formatted Dataset",
+                    info="Toggle to upload a pre-formatted dataset instead of using CVAT tasks"
+                )
+                
+                with gr.Group(visible=False) as upload_own_group:
+                    own_dataset_file = gr.File(
+                        label="Upload Formatted Dataset (ZIP)",
+                        file_types=[".zip"],
+                        type="filepath"
+                    )
 
                 train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg", elem_id="btn")
+                train_own_btn = gr.Button("🚀 Train with Uploaded Dataset", variant="primary", size="lg", elem_id="btn", visible=False)
                 
                 dataset_log = gr.Textbox(
                     label="Dataset Detail Log", 
@@ -491,29 +588,8 @@ def load_dataset_interface(app_interface, app):
 
                 gr.HTML("<div style='margin-top: 5px;'></div>")
 
-                gr.Markdown("### ⚙️ Training Configuration")
-                with gr.Row():
-                    experiments_slider = gr.Slider(
-                        minimum=1, 
-                        maximum=1000, 
-                        value=100, 
-                        step=1, 
-                        label="Epochs"
-                    )
-                    
-                    imgsz_slider = gr.Slider(
-                        minimum=64, 
-                        maximum=1280, 
-                        value=640, 
-                        step=32, 
-                        label="Image Size"
-                    )
-                    
-                    model_dropdown = gr.Dropdown(
-                        choices=app.get_pretrained_models("Ultralytics YOLO Detection 1.0"),
-                        label="Select Pre-trained Model",
-                        interactive=True
-                    )
+
+
                 def on_format_change(format_val):
                      models = app.get_pretrained_models(format_val)
                      return gr.update(choices=models, value=models[0] if models else None)
@@ -523,61 +599,6 @@ def load_dataset_interface(app_interface, app):
                     inputs=[format_dropdown],
                     outputs=[model_dropdown] 
                 )
-                gr.Markdown("#### 📊 Dataset Split Ratios (Must sum approx to 10)")
-                with gr.Row():
-                    train_ratio = gr.Number(value=7, label="Train Ratio", precision=0)
-                    val_ratio = gr.Number(value=2, label="Validation Ratio", precision=0)
-                    test_ratio = gr.Number(value=1, label="Test Ratio", precision=0)
-                
-                manual_aug_checkbox = gr.Checkbox(
-                    value=False,
-                    label="Manual Adjust Augmentation"
-                )
-                    
-                base_image_state = gr.State(None)
-                    
-                with gr.Group(visible=False) as aug_settings_group:
-                    with gr.Row():
-                        with gr.Column():
-                            aug_preview_img = gr.Image(label="Augmentation Preview", interactive=False,type="pil")
-                            gr.Markdown("### 👁️ Live Preview\nClick below to load a random image from the task to see how augmentations affect it.")
-                            load_sample_btn = gr.Button("🎲 Load New Sample", size="sm")
-
-                        with gr.Column():
-                            gr.Markdown("#### 🎨 Color Augmentation")
-                            with gr.Row():
-                                hsv_h = gr.Slider(0.0, 1.0, value=0.015, step=0.001, label="HSV-Hue")
-                                hsv_s = gr.Slider(0.0, 1.0, value=0.7, step=0.01, label="HSV-Saturation")
-                            with gr.Row():
-                                hsv_v = gr.Slider(0.0, 1.0, value=0.4, step=0.01, label="HSV-Value")
-                                bgr = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="BGR Flip Prob")
-
-                            gr.Markdown("#### 📐 Geometric Transforms")
-                            with gr.Row():
-                                degrees = gr.Slider(-180, 180, value=0.0, step=1.0, label="Rotation (+/- deg)")
-                                translate = gr.Slider(0.0, 1.0, value=0.1, step=0.01, label="Translate (+/- frac)")
-                            with gr.Row():
-                                scale = gr.Slider(0.0, 2.0, value=0.5, step=0.01, label="Scale (+/- gain)")
-                                shear = gr.Slider(-180, 180, value=0.0, step=1.0, label="Shear (+/- deg)")
-                            with gr.Row():
-                                perspective = gr.Slider(0.0, 0.001, value=0.0, step=0.0001, label="Perspective")
-                                flipud = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Flip Up-Down Prob")
-                            with gr.Row():
-                                fliplr = gr.Slider(0.0, 1.0, value=0.5, step=0.01, label="Flip Left-Right Prob")
-
-                            gr.Markdown("#### 🔀 Advanced Mixing")
-                            with gr.Row():
-                                mosaic = gr.Slider(0.0, 1.0, value=1.0, step=0.01, label="Mosaic Prob")
-                                mixup = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Mixup Prob")
-                            with gr.Row():
-                                cutmix = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Cutmix Prob")
-                                copy_paste = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Copy-Paste Prob")
-
-                            gr.Markdown("#### ✨ Image Quality & Effects")
-                            with gr.Row():
-                                erasing = gr.Slider(0.0, 0.9, value=0.4, step=0.01, label="Erasing %")
-                        
-
                 
                 def toggle_aug_settings(checkbox_val):
                     return gr.update(visible=checkbox_val)
@@ -700,6 +721,90 @@ def load_dataset_interface(app_interface, app):
                     outputs=[training_log, dataset_log, current_training_project_name]
                 )
                 
+                # Toggle between CVAT task and upload mode
+                def on_upload_toggle(checked):
+                    """Toggle UI visibility based on upload checkbox"""
+                    return (
+                        gr.update(visible=not checked),  # cvat_tasks_dropdown
+                        gr.update(visible=not checked),  # train_btn
+                        gr.update(visible=checked),      # upload_own_group
+                        gr.update(visible=checked)       # train_own_btn
+                    )
+                
+                def on_train_config_toggle(checked):
+                    """Toggle training config visibility"""
+                    return gr.update(visible=checked)
+                
+                upload_own_checkbox.change(
+                    fn=on_upload_toggle,
+                    inputs=[upload_own_checkbox],
+                    outputs=[cvat_tasks_dropdown, train_btn, upload_own_group, train_own_btn]
+                )
+                
+                train_config_checkbox.change(
+                    fn=on_train_config_toggle,
+                    inputs=[train_config_checkbox],
+                    outputs=[train_config_group]
+                )
+                
+                # Handle training with uploaded dataset
+                def trigger_own_training(uploaded_file, format_name, model, epochs, imgsz, manual_aug,
+                                        r_train, r_val, r_test,
+                                        h_h, h_s, h_v, bgr_p,
+                                        deg, trans, scl, shr,
+                                        persp, f_ud, f_lr,
+                                        mos, mix, cut, cp,
+                                        ers):
+                    # 1. Process uploaded file
+                    success, final_path, msg = app.process_uploaded_dataset(uploaded_file)
+                    if not success:
+                        yield msg, "❌ Upload Failed", None
+                        return
+                    
+                    # 2. Inspect dataset
+                    stats = app.inspect_dataset_zip(final_path)
+                    stats_str = "📊 Dataset Stats:\\n"
+                    if stats.get("status") != "Error":
+                        stats_str += f"Valid Images: {stats['images']}\\n"
+                        stats_str += f"Classes ({stats['classes']}): {stats['class_names']}\\n"
+                    else:
+                        stats_str += f"Error inspecting stats: {stats.get('message')}\\n"
+                    
+                    yield f"{msg}\\n\\n🚀 Training Started...", stats_str, None
+                    
+                    # 3. Determine project name from filename
+                    filename = Path(final_path).stem  # e.g., "formatted_my_dataset"
+                    project_name = filename.replace("formatted_", "")
+                    
+                    # 4. Augmentation params
+                    aug_args = {
+                        'hsv_h': h_h, 'hsv_s': h_s, 'hsv_v': h_v, 'bgr': bgr_p,
+                        'degrees': deg, 'translate': trans, 'scale': scl, 'shear': shr,
+                        'perspective': persp, 'flipud': f_ud, 'fliplr': f_lr,
+                        'mosaic': mos, 'mixup': mix, 'cutmix': cut, 'copy_paste': cp,
+                        'erasing': ers
+                    }
+                    
+                    yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name
+                    
+                    # 5. Start training
+                    result = app.start_training(final_path, model, epochs, imgsz, manual_aug, format_name=format_name, **aug_args)
+                    yield result, stats_str, None
+                
+                train_own_btn.click(
+                    fn=trigger_own_training,
+                    inputs=[
+                        own_dataset_file, format_dropdown, model_dropdown, experiments_slider, imgsz_slider, manual_aug_checkbox,
+                        train_ratio, val_ratio, test_ratio,
+                        hsv_h, hsv_s, hsv_v, bgr,
+                        degrees, translate, scale, shear,
+                        perspective, flipud, fliplr,
+                        mosaic, mixup, cutmix, copy_paste,
+                        erasing
+                    ],
+                    outputs=[training_log, dataset_log, current_training_project_name]
+                )
+                
                 # --- PREVIEW LOGIC ---
                 def load_sample_image(task_str):
                     if not task_str: return None, None
@@ -742,7 +847,7 @@ def load_dataset_interface(app_interface, app):
                     slider.change(fn=update_aug_preview, inputs=aug_inputs, outputs=aug_preview_img)
                 for slider in aug_inputs[1:]:
                     slider.change(fn=update_aug_preview, inputs=aug_inputs, outputs=aug_preview_img)
-        with gr.Tab("🧠 Predict Model") as predict_tab:
+        with gr.Tab("🎱 Predict Model") as predict_tab:
             
             def on_predict_tab_select():
                 """Refreshes the project dropdown when tab is selected."""
@@ -903,10 +1008,147 @@ def load_dataset_interface(app_interface, app):
                     fn=on_predict_tab_select, 
                     outputs=[train_project_dd, train_model_dd]
                 )
-            
-
                 
- 
+        with gr.Tab("🤖 Pre-Trained Models") as pre_trained_tab:
+            pre_trained_tab.select(fn=lambda: app.cleanup_preview(), outputs=None)
+            with gr.Column():
+                with gr.Accordion("➕ Add Custom Model", open=False):
+                    with gr.Column():
+                        model_name_input = gr.Textbox(
+                            label="Model Name", 
+                            placeholder="e.g modelABC"
+                        )
+                        model_uploader=gr.File(
+                            label="Upload .pt file",
+                            file_types=[".pt"],
+                            height=207
+                        )
+                        upload_model_btn = gr.Button("📤 Upload Model", variant="primary", elem_id="btn")
+                        upload_model_status=gr.Markdown(
+                            label="Upload Status",
+                        )
+                own_model_dropdown=gr.Dropdown(
+                    label="Select Model",
+                    choices=[],
+                    interactive=True
+                )
+                own_delete_btn=gr.Button("🗑️ Delete Model",elem_id="del_btn")
+                
+                own_model_details=gr.Code(
+                    label="Model Details",
+                    interactive=False,
+                    language="json",
+                    lines=10,
+                )
+                with gr.Row():
+                    with gr.Column():
+                        gr.Markdown("### 🖼️ Run Prediction")
+                        own_input_img = gr.Image(
+                            label="Input Image", 
+                            type="pil",
+                            height=400,
+                            interactive=True
+                        )
+                        with gr.Row():
+                            own_conf_slider = gr.Slider(
+                                minimum=0.01, maximum=1.0, value=0.25, step=0.01,
+                                label="Confidence Threshold"
+                            )
+                            own_iou_slider = gr.Slider(
+                                minimum=0.01, maximum=1.0, value=0.45, step=0.01,
+                                label="IOU Threshold"
+                            )
+                        own_predict_btn = gr.Button("🚀 Predict Image", variant="primary", elem_id="btn")
+
+                    
+                    with gr.Column():
+                        gr.Markdown("### 📊 Prediction Result")
+                        own_output_img = gr.Image(label="Prediction Result", type="pil",height=400)
+                        own_result_details = gr.Code(label="Detection Details", language="json", elem_id="detection_details_code",lines=10)
+                
+                # Event Handlers
+                def refresh_own_model_dropdown():
+                    """Refresh dropdown with available custom models"""
+                    models = app.load_own_models()
+                    choices = [m["name"] for m in models]
+                    return gr.update(choices=choices, value=None)
+                
+                def handle_model_upload(model_name, upload_file):
+                    """Handle custom model upload event"""
+                    if not upload_file:
+                        return "❌ Please upload a .pt file", gr.update()
+                    
+                    success, message = app.save_own_model(model_name, upload_file)
+                    
+                    # Refresh dropdown
+                    updated_dropdown = refresh_own_model_dropdown()
+                    
+                    return message, updated_dropdown
+                
+                def handle_model_delete(model_name):
+                    """Handle model deletion event"""
+                    if not model_name:
+                        return "❌ Please select a model", gr.update(), ""
+                    
+                    success, message = app.delete_own_model(model_name)
+                    
+                    # Refresh dropdown
+                    updated_dropdown = refresh_own_model_dropdown()
+                    
+                    return message, updated_dropdown, ""
+                
+                def display_model_details(model_name):
+                    """Display selected model details"""
+                    if not model_name:
+                        return ""
+                    
+                    details = app.get_own_model_details(model_name)
+                    return json.dumps(details, indent=2)
+                
+                def predict_own_model(model_name, image, conf, iou):
+                    """Run prediction with selected custom model"""
+                    if not image:
+                        return None, json.dumps({"error": "Please upload an image"}, indent=2)
+                    
+                    if not model_name:
+                        return image, json.dumps({"error": "Please select a model"}, indent=2)
+                    
+                    output_img, details_json = app.predict_with_own_model(
+                        model_name, image, conf, iou
+                    )
+                    
+                    return output_img, details_json
+                
+                # Connect event handlers
+                upload_model_btn.click(
+                    fn=handle_model_upload,
+                    inputs=[model_name_input, model_uploader],
+                    outputs=[upload_model_status, own_model_dropdown]
+                )
+                
+                own_model_dropdown.change(
+                    fn=display_model_details,
+                    inputs=[own_model_dropdown],
+                    outputs=[own_model_details]
+                )
+                
+                own_delete_btn.click(
+                    fn=handle_model_delete,
+                    inputs=[own_model_dropdown],
+                    outputs=[upload_model_status, own_model_dropdown, own_model_details]
+                )
+                
+                own_predict_btn.click(
+                    fn=predict_own_model,
+                    inputs=[own_model_dropdown, own_input_img, own_conf_slider, own_iou_slider],
+                    outputs=[own_output_img, own_result_details]
+                )
+                
+                # Refresh dropdown when tab is selected
+                pre_trained_tab.select(
+                    fn=refresh_own_model_dropdown,
+                    outputs=[own_model_dropdown]
+                )
         # ABOUT TAB
         with gr.Tab("ℹ️ About") as about_tab:
             about_tab.select(fn=lambda: app.cleanup_preview(), outputs=None)

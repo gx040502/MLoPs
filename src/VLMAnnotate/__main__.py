@@ -23,7 +23,7 @@ def main():
     }
     """
 
-    with gr.Blocks(css=custom_css, theme=gr.themes.Soft(), title="See.AI Agent") as app_interface:
+    with gr.Blocks(css=custom_css, theme=gr.themes.Soft(), title="See.AI Agent", fill_height=True) as app_interface:
         load_dataset_interface(app_interface, app)
 
 

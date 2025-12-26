@@ -67,6 +67,50 @@ class APP():
     # -------------------------------------------------------------------------
     #                         PREDICT MODEL LOGIC
     # -------------------------------------------------------------------------
+     
+    def extract_and_flatten_zip(self, zip_path, extract_to):
+        """
+        Intelligently extract zip and flatten if it contains only one root directory.
+        
+        This fixes the common issue where users zip a folder (abc.zip contains abc/)
+        instead of zipping the folder contents directly.
+        
+        Args:
+            zip_path: Path to zip file
+            extract_to: Directory to extract to
+        """
+        import zipfile
+        
+        # First, extract to a temporary location
+        temp_extract = Path(extract_to).parent / f"temp_{Path(extract_to).name}"
+        temp_extract.mkdir(parents=True, exist_ok=True)
+        
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(temp_extract)
+            
+            # Check if there's only one root directory
+            root_items = list(temp_extract.iterdir())
+            
+            if len(root_items) == 1 and root_items[0].is_dir():
+                # Single root directory - flatten by moving its contents up
+                single_root = root_items[0]
+                print(f"🔄 Flattening nested structure: {single_root.name}/")
+                
+                # Move contents from nested folder to final destination
+                if Path(extract_to).exists():
+                    shutil.rmtree(extract_to)
+                shutil.move(str(single_root), str(extract_to))
+            else:
+                # Multiple root items or root is not a directory - use as is
+                if Path(extract_to).exists():
+                    shutil.rmtree(extract_to)
+                shutil.move(str(temp_extract), str(extract_to))
+                
+        finally:
+            # Clean up temp directory if it still exists
+            if temp_extract.exists():
+                shutil.rmtree(temp_extract)
     
     def list_trained_projects(self):
         """
@@ -358,11 +402,9 @@ class APP():
         try:
             project_name = zip_file_path.split('/')[-1].replace('.zip', '')
             output_dir = os.path.join(self.datasets_dir, project_name)
-            os.makedirs(output_dir, exist_ok=True)
-            # Use a context manager to handle the zip file
-            with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-                # Extract all the contents to the specified output directory
-                zip_ref.extractall(output_dir)
+            
+            # Use smart extraction that auto-flattens nested structures
+            self.extract_and_flatten_zip(zip_file_path, output_dir)
             
 
             # Update the config with the new dataset
@@ -393,6 +435,271 @@ class APP():
             return []
         
         return [f.name for f in models_dir.glob("*.pt")]
+    
+    def load_own_models(self):
+        """
+        Load custom models from settings.json.
+        Returns: List of model dictionaries with name and path
+        """
+        own_models = self.config.get("own_models", [])
+        if not isinstance(own_models, list):
+            self.config["own_models"] = []
+            self.save_config()
+            return []
+        return own_models
+    
+    def save_own_model(self, model_name, model_file_path):
+        """
+        Save uploaded model to .gradio/own_models/ and update settings.json.
+        
+        Args:
+            model_name: str - Name for the model
+            model_file_path: str - Path to uploaded .pt file
+            
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        if not model_name or not model_name.strip():
+            return False, "❌ Please provide a model name"
+        
+        if not model_file_path or not os.path.exists(model_file_path):
+            return False, "❌ Please upload a valid .pt file"
+        
+        model_name = model_name.strip()
+        
+        # Create own_models directory
+        own_models_dir = Path(self.datasets_dir) / "own_models"
+        own_models_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Destination path
+        dest_filename = f"{model_name}.pt"
+        dest_path = own_models_dir / dest_filename
+        
+        try:
+            # Copy file to destination
+            shutil.copy2(model_file_path, dest_path)
+            
+            # Initialize own_models if not exists
+            if "own_models" not in self.config:
+                self.config["own_models"] = []
+            
+            # Check if model already exists
+            existing_models = self.config["own_models"]
+            existing_idx = next((i for i, m in enumerate(existing_models) if m.get("name") == model_name), -1)
+            
+            model_entry = {
+                "name": model_name,
+                "path": str(dest_path)
+            }
+            
+            if existing_idx >= 0:
+                # Update existing
+                self.config["own_models"][existing_idx] = model_entry
+                message = f"✅ Model '{model_name}' updated successfully"
+            else:
+                # Add new
+                self.config["own_models"].append(model_entry)
+                message = f"✅ Model '{model_name}' uploaded successfully"
+            
+            self.save_config()
+            return True, message
+            
+        except Exception as e:
+            return False, f"❌ Error saving model: {e}"
+    
+    def delete_own_model(self, model_name):
+        """
+        Delete model file and remove from settings.json.
+        
+        Args:
+            model_name: str - Name of model to delete
+            
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        if not model_name:
+            return False, "❌ Please select a model to delete"
+        
+        own_models = self.config.get("own_models", [])
+        model_entry = next((m for m in own_models if m.get("name") == model_name), None)
+        
+        if not model_entry:
+            return False, f"❌ Model '{model_name}' not found"
+        
+        # Delete physical file
+        model_path = Path(model_entry.get("path", ""))
+        if model_path.exists():
+            try:
+                os.remove(model_path)
+            except Exception as e:
+                return False, f"❌ Error deleting file: {e}"
+        
+        # Remove from config
+        self.config["own_models"] = [m for m in own_models if m.get("name") != model_name]
+        self.save_config()
+        
+        return True, f"✅ Model '{model_name}' deleted successfully"
+    
+    def get_own_model_details(self, model_name):
+        """
+        Load model and return metadata.
+        
+        Args:
+            model_name: str - Name of model
+            
+        Returns:
+            dict: Model details or error message
+        """
+        if not model_name:
+            return {"Status": "No model selected"}
+        
+        own_models = self.config.get("own_models", [])
+        model_entry = next((m for m in own_models if m.get("name") == model_name), None)
+        
+        if not model_entry:
+            return {"Error": "Model not found"}
+        
+        model_path = model_entry.get("path", "")
+        
+        if not os.path.exists(model_path):
+            return {"Error": "Model file not found"}
+        
+        try:
+            # Load YOLO model
+            model = YOLO(model_path)
+            
+            # Extract metadata
+            params = sum(p.numel() for p in model.model.parameters())
+            size_mb = os.path.getsize(model_path) / (1024 * 1024)
+            
+            # Get class names
+            classes = {}
+            if hasattr(model, 'names') and model.names:
+                classes = {str(k): v for k, v in model.names.items()}
+            
+            return {
+                "Model": model_name,
+                "Params": f"{params:,}",
+                "Size": f"{size_mb:.2f} MB",
+                "Classes": classes if classes else "N/A"
+            }
+            
+        except Exception as e:
+            return {"Error": f"Failed to load model: {e}"}
+    
+    def predict_with_own_model(self, model_name, image, conf_threshold=0.25, iou_threshold=0.45):
+        """
+        Run prediction using custom model.
+        
+        Args:
+            model_name: str - Name of custom model
+            image: PIL Image
+            conf_threshold: float - Confidence threshold
+            iou_threshold: float - IOU threshold
+            
+        Returns:
+            tuple: (output_image, detection_details_json)
+        """
+        if image is None:
+            return None, json.dumps({"error": "Please upload an image"}, indent=2)
+        
+        if not model_name:
+            return image, json.dumps({"error": "Please select a model"}, indent=2)
+        
+        own_models = self.config.get("own_models", [])
+        model_entry = next((m for m in own_models if m.get("name") == model_name), None)
+        
+        if not model_entry:
+            return image, json.dumps({"error": "Model not found"}, indent=2)
+        
+        model_path = model_entry.get("path", "")
+        
+        if not os.path.exists(model_path):
+            return image, json.dumps({"error": "Model file not found"}, indent=2)
+        
+        try:
+            # Load model
+            model = YOLO(model_path)
+            
+            # Detect model type (detection, segmentation, or classification)
+            is_classification = "-cls" in model_name.lower() or (hasattr(model, 'task') and model.task == 'classify')
+            
+            if is_classification:
+                # Classification prediction
+                results = model.predict(image, device=0, verbose=False)
+                
+                if results and len(results) > 0:
+                    probs = results[0].probs
+                    top1_idx = probs.top1
+                    top1_conf = float(probs.top1conf)
+                    label = model.names[top1_idx]
+                    
+                    # Create visualization
+                    output_image = image.copy()
+                    draw = ImageDraw.Draw(output_image)
+                    
+                    text = f"{label}: {top1_conf:.3f}"
+                    try:
+                        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
+                    except:
+                        font = ImageFont.load_default()
+                    
+                    bbox = draw.textbbox((0, 0), text, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    
+                    x, y = 10, 10
+                    draw.rectangle([x, y, x + text_width + 10, y + text_height + 10], fill=(0, 255, 0))
+                    draw.text((x + 5, y + 5), text, fill=(0, 0, 0), font=font)
+                    
+                    json_results = {
+                        "model_type": "classification",
+                        "predicted_class": label,
+                        "confidence": top1_conf,
+                        "top5_predictions": [
+                            {"class": model.names[i], "confidence": float(probs.data[i])}
+                            for i in probs.top5
+                        ]
+                    }
+                    
+                    return output_image, json.dumps(json_results, indent=2)
+                else:
+                    return image, json.dumps({"status": "No classification results"}, indent=2)
+            
+            else:
+                # Detection/Segmentation prediction
+                results = model.predict(image, conf=conf_threshold, iou=iou_threshold, device=0, verbose=False)
+                
+                # Plot results
+                res_plotted = results[0].plot()
+                output_image = Image.fromarray(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))
+                
+                # Format details
+                details = []
+                for box in results[0].boxes:
+                    cls_id = int(box.cls[0])
+                    label = model.names[cls_id]
+                    score = float(box.conf[0])
+                    xyxy = box.xyxy[0].tolist()
+                    details.append({
+                        "label": label,
+                        "confidence": score,
+                        "bbox": xyxy
+                    })
+                
+                json_results = {
+                    "model_type": "detection/segmentation",
+                    "detections_count": len(results[0].boxes),
+                    "detections": details
+                }
+                
+                return output_image, json.dumps(json_results, indent=2)
+        
+        except Exception as e:
+            print(f"Prediction error: {e}")
+            import traceback
+            traceback.print_exc()
+            return image, json.dumps({"error": str(e)}, indent=2)
 
     def get_random_sample_images(self, task_id, count=4):
         """
@@ -696,12 +1003,17 @@ class APP():
         # 1. Get dataset path
         formatted_dfs = self.config.get("formatted_datasets", [])
         dataset_entry = next((d for d in formatted_dfs if d["path"] == formatted_path), None)
-        formatted_dataset_name = dataset_entry["name"]
         
-        if not dataset_entry:
-            return f"❌ Error: Dataset Path '{formatted_path}' not found in config."
+        # Handle both registered datasets and uploaded datasets
+        if dataset_entry:
+            # Dataset from CVAT task (registered in config)
+            formatted_dataset_name = dataset_entry["name"]
+        else:
+            # Uploaded dataset (not in config) - derive name from filename
+            formatted_dataset_name = Path(formatted_path).stem.replace("formatted_", "")
+            print(f"Using uploaded dataset: {formatted_dataset_name}")
             
-        zip_path = Path(dataset_entry["path"])
+        zip_path = Path(formatted_path)
         if not zip_path.exists():
             return f"❌ Error: Zip file not found at {zip_path}"
             
@@ -716,13 +1028,11 @@ class APP():
         
         try:
             # Clean existing if needed or just overwrite? ZipFile extractall overwrites.
-            # But let's be safe.
             if target_dir.exists():
                 shutil.rmtree(target_dir)
-            target_dir.mkdir(parents=True, exist_ok=True)
             
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(target_dir)
+            # Use smart extraction that auto-flattens nested structures
+            self.extract_and_flatten_zip(zip_path, target_dir)
                 
             print(f"Extracted dataset to {target_dir}")
             
@@ -1982,6 +2292,40 @@ class APP():
              
         return f"✅ Downloaded & Formatted Successfully!\\nPath: {formatted_zip_path}", str(formatted_zip_path)
 
+    def process_uploaded_dataset(self, uploaded_file_path):
+        """
+        Copy user-uploaded dataset to .gradio directory.
+        
+        Args:
+            uploaded_file_path: Path to uploaded file from gr.File
+            
+        Returns:
+            tuple: (success: bool, final_path: str, message: str)
+        """
+        if not uploaded_file_path:
+            return False, None, "❌ No file uploaded"
+        
+        try:
+            uploaded_path = Path(uploaded_file_path)
+            if not uploaded_path.exists():
+                return False, None, f"❌ File not found: {uploaded_file_path}"
+            
+            # Extract filename and create destination path
+            original_filename = uploaded_path.name
+            dest_filename = f"formatted_{original_filename}"
+            dest_path = Path(self.datasets_dir) / dest_filename
+            
+            # Copy file to .gradio directory
+            shutil.copy2(uploaded_path, dest_path)
+            
+            print(f"Copied uploaded dataset: {uploaded_path} → {dest_path}")
+            
+            return True, str(dest_path), f"✅ Dataset uploaded successfully: {dest_filename}"
+            
+        except Exception as e:
+            print(f"Error processing uploaded dataset: {e}")
+            return False, None, f"❌ Error: {str(e)}"
+
     def cleanup_preview(self):
         """Clean up all temporary preview files"""
         try:
@@ -2023,8 +2367,9 @@ class APP():
         
         try:
             temp_inspect_dir.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_inspect_dir)
+            
+            # Use smart extraction that auto-flattens nested structures
+            self.extract_and_flatten_zip(zip_path, temp_inspect_dir)
                 
             # Detect format type
             is_classification = (temp_inspect_dir / "train").exists() and (temp_inspect_dir / "train").is_dir()
