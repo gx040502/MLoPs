@@ -1,3 +1,4 @@
+import traceback
 import json
 import time
 import os
@@ -16,9 +17,11 @@ from PIL import Image, ImageDraw, ImageFont
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 from cvat_sdk import make_client
 from cvat_sdk.api_client import Configuration, ApiClient, models
+from types import SimpleNamespace
 
 from .utils import COCODatasetBuilder, GroundingDINODetector
-from ultralytics import YOLO
+from .utils import COCODatasetBuilder, GroundingDINODetector
+from ultralytics import YOLO, SAM
 
 class APP():
     def __init__(self, vlm_model: GroundingDINODetector=None):
@@ -31,6 +34,7 @@ class APP():
                 self.selected_dataset = ''
                 self.selected_dataset_1st_img_path = ""
 
+            self.sam_model = SAM("sam2.1_b.pt")
             self.model = vlm_model
             # Setup Training directory path
             self.train_root_dir = Path("/home/intern/Gitlab/pipeline/1.Train")
@@ -102,20 +106,42 @@ class APP():
 
     def get_test_images(self, project_name):
         """
-        Returns a list of image paths from Dataset/{project_name}/images/Test
+        Returns a list of image paths from Dataset/{project_name}/images/Test or test
+        Supports both Detection/Segmentation (images/Test) and Classification (test) formats
         """
         if not project_name: return []
         
         # Dataset assumes CWD is project root
-        test_dir = Path("Dataset") / project_name / "images" / "Test"
+        project_dir = Path("Dataset") / project_name
+        
+        # Try Detection/Segmentation format: images/Test
+        test_dir = project_dir / "images" / "Test"
+        
+        # If not found, try Classification format: test/
+        if not test_dir.exists():
+            test_dir = project_dir / "test"
+        
+        # If still not found, return empty
         if not test_dir.exists():
             return []
-            
+        
         images = []
         valid_exts = ['.jpg', '.jpeg', '.png', '.bmp']
-        for img_path in test_dir.iterdir():
-            if img_path.is_file() and img_path.suffix.lower() in valid_exts:
-                images.append(str(img_path.resolve()))
+        
+        # For Classification, test/ contains class subfolders (dog/, cat/, etc.)
+        # Collect images from all subfolders
+        if test_dir.name == "test":
+            # Classification format: traverse class folders
+            for class_folder in test_dir.iterdir():
+                if class_folder.is_dir():
+                    for img_path in class_folder.iterdir():
+                        if img_path.is_file() and img_path.suffix.lower() in valid_exts:
+                            images.append(str(img_path.resolve()))
+        else:
+            # Detection/Segmentation format: images directly in Test/
+            for img_path in test_dir.iterdir():
+                if img_path.is_file() and img_path.suffix.lower() in valid_exts:
+                    images.append(str(img_path.resolve()))
                 
         # Limit to avoid overloading UI if too many
         return sorted(images)[:50] 
@@ -161,6 +187,7 @@ class APP():
     def predict_with_model(self, project_name, model_name, image, conf_threshold, iou_threshold):
         """
         Runs YOLO inference on the image using the selected model.
+        Supports both detection/segmentation and classification models.
         """
         if image is None:
             return None, "Please upload an image."
@@ -173,33 +200,91 @@ class APP():
             return image, f"Model not found at {model_path}"
             
         try:
+            # Detect model type by checking if model_name contains "-cls"
+            is_classification = "-cls" in model_name.lower()
+            
             # Load model
             model = YOLO(model_path)
             
-            # Run inference
-            results = model.predict(image, conf=conf_threshold, iou=iou_threshold,device='cpu')
-            
-            # Plot results on the image (returns numpy array in BGR)
-            res_plotted = results[0].plot() 
-            output_image = Image.fromarray(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))
-            
-            # Format detailed output
-            details = []
-            for box in results[0].boxes:
-                cls_id = int(box.cls[0])
-                label = model.names[cls_id]
-                score = float(box.conf[0])
-                details.append(f"{label}: {score:.3f}")
+            # Run inference based on model type
+            if is_classification:
+                # Classification: No conf/iou parameters
+                print(f"Running classification prediction on model: {model_name}")
+                results = model.predict(image, device=0, verbose=False)
                 
-            json_results = {
-                "detections_count": len(results[0].boxes),
-                "detections": details
-            }
-            
-            return output_image, json.dumps(json_results, indent=2)
+                # For classification, get top-1 prediction
+                if results and len(results) > 0:
+                    probs = results[0].probs
+                    top1_idx = probs.top1
+                    top1_conf = float(probs.top1conf)
+                    label = model.names[top1_idx]
+                    
+                    # Create a simple visualization with the label
+                    output_image = image.copy()
+                    from PIL import ImageDraw, ImageFont
+                    draw = ImageDraw.Draw(output_image)
+                    
+                    # Draw label on image
+                    text = f"{label}: {top1_conf:.3f}"
+                    try:
+                        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
+                    except:
+                        font = ImageFont.load_default()
+                    
+                    # Draw text with background
+                    bbox = draw.textbbox((0, 0), text, font=font)
+                    text_width = bbox[2] - bbox[0]
+                    text_height = bbox[3] - bbox[1]
+                    
+                    # Position at top-left
+                    x, y = 10, 10
+                    draw.rectangle([x, y, x + text_width + 10, y + text_height + 10], fill=(0, 255, 0))
+                    draw.text((x + 5, y + 5), text, fill=(0, 0, 0), font=font)
+                    
+                    # Format detailed output
+                    json_results = {
+                        "model_type": "classification",
+                        "predicted_class": label,
+                        "confidence": top1_conf,
+                        "top5_predictions": [
+                            {"class": model.names[i], "confidence": float(probs.data[i])}
+                            for i in probs.top5
+                        ]
+                    }
+                    
+                    return output_image, json.dumps(json_results, indent=2)
+                else:
+                    return image, "No classification results"
+                    
+            else:
+                # Detection/Segmentation: Use conf and iou parameters
+                print(f"Running detection/segmentation prediction on model: {model_name}")
+                results = model.predict(image, conf=conf_threshold, iou=iou_threshold, device=0, verbose=False)
+                
+                # Plot results on the image (returns numpy array in BGR)
+                res_plotted = results[0].plot() 
+                output_image = Image.fromarray(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))
+                
+                # Format detailed output
+                details = []
+                for box in results[0].boxes:
+                    cls_id = int(box.cls[0])
+                    label = model.names[cls_id]
+                    score = float(box.conf[0])
+                    details.append(f"{label}: {score:.3f}")
+                    
+                json_results = {
+                    "model_type": "detection/segmentation",
+                    "detections_count": len(results[0].boxes),
+                    "detections": details
+                }
+                
+                return output_image, json.dumps(json_results, indent=2)
             
         except Exception as e:
             print(f"Prediction error: {e}")
+            import traceback
+            traceback.print_exc()
             return image, f"Error: {e}"
     
     def create_dataset_html(self):
@@ -290,11 +375,20 @@ class APP():
         except Exception as e:
             return False, f"An error occurred while unzipping the file: {e}"
 
-    def get_pretrained_models(self):
+    def get_pretrained_models(self, format_name=None):
         """
-        Scans values in models/pre_trained/detection for .pt files
+        Scans values in models/pre_trained/detection or segmentation for .pt files
         """
-        models_dir = Path("models/pre_trained/detection")
+        # Default to detection
+        sub_dir = "detection"
+        
+        if format_name:
+            if "Segmentation" in format_name:
+                sub_dir = "segmentation"
+            elif "Classification" in format_name:
+                sub_dir = "classification"
+        
+        models_dir = Path(f"models/pre_trained/{sub_dir}")
         if not models_dir.exists():
             return []
         
@@ -572,7 +666,7 @@ class APP():
             print(f"Augmentation preview error: {e}")
             return images[0] if images else None
         
-    def start_training(self, formatted_path, model_name, epochs, imgsz=640, manual_aug=False, **kwargs):
+    def start_training(self, formatted_path, model_name, epochs, imgsz=640, manual_aug=False, format_name="Ultralytics YOLO Detection 1.0", **kwargs):
         """
         Orchestrates the training process:
         1. Locate and extract the formatted dataset zip
@@ -684,7 +778,13 @@ class APP():
             import train
             
             # Construct absolute model path
-            model_path = str(Path("models/pre_trained/detection") / model_name)
+            sub_dir = "detection"
+            if format_name and ("Segmentation" in format_name):
+                 sub_dir = "segmentation"
+            elif format_name and ("Classification" in format_name):
+                 sub_dir = "classification"
+
+            model_path = str(Path(f"models/pre_trained/{sub_dir}") / model_name)
             
             success, msg = train.run_training(
                 project_name=project_name,
@@ -693,6 +793,7 @@ class APP():
                 imgsz=int(imgsz),
                 manual_aug=manual_aug,
                 aug_params=aug_params,
+                format_name=format_name
             )
             
             if success:
@@ -1102,7 +1203,7 @@ class APP():
         
         return image_with_boxes
 
-    def process_image(self, image, text_prompt, confidence_threshold=0.3):
+    def process_image(self, image, text_prompt, confidence_threshold=0.3, inference_format="Detection"):
         """
         Process image with Grounding DINO for object detection.
         
@@ -1139,6 +1240,56 @@ class APP():
                 detections=detections, 
                 threshold=confidence_threshold
             )
+            
+            # --- Classification Logic ---
+            if inference_format == "Classification" and detections:
+                # Filter to only the top-1 highest confidence detection
+                top_detection = max(detections, key=lambda x: x['score'])
+                detections = [top_detection]
+                
+                # Redraw boxes with only the top detection
+                image_with_boxes = self.draw_bounding_boxes(
+                    image=image, 
+                    detections=detections, 
+                    threshold=confidence_threshold
+                )
+
+            # --- Segmentation Logic ---
+            if inference_format == "Segmentation" and detections:
+                 try:
+                     # 1. Prepare boxes -> [ [x1, y1, x2, y2], ... ]
+                     bboxes = [det['box'] for det in detections]
+                     
+                     # 2. Run SAM
+                     # SAM expects loaded image or path. PIL Image works.
+                     # bboxes arg in ultralytics SAM: list of boxes
+                     sam_results = self.sam_model(image, bboxes=bboxes, verbose=False)
+                     
+                     if sam_results and sam_results[0].masks:
+                         # 3. Visualization
+                         # Plot masks on top of image_with_boxes (or clean image?)
+                         # Typically we want both boxes and masks. 
+                         # plotting method from result returns a plotted numpy array
+                         res_plotted = sam_results[0].plot() # numpy BGR
+                         image_with_boxes = Image.fromarray(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))
+                         
+                         # 4. Extract Polygons for return
+                         # result.masks.xy is a list of arrays (one per mask)
+                         masks_xy = sam_results[0].masks.xy
+                         
+                         # Update raw_results with segmentation
+                         for i, det in enumerate(detections):
+                             if i < len(masks_xy):
+                                 # Convert numpy array to list of points [ [x,y], [x,y] ... ] or flattened?
+                                 # COCO segmentation is usually [[x1, y1, x2, y2, ...]] (flattened)
+                                 poly = masks_xy[i].flatten().tolist()
+                                 det['segmentation'] = [poly]
+                 except Exception as e:
+                     print(f"SAM Error: {e}")
+                     # Fallback to just boxes if SAM fails
+                     pass
+
+            # Prepare detection results for display
 
             # Prepare detection results for display
             detection_info = []
@@ -1160,7 +1311,7 @@ class APP():
             print(error_msg)
             return image if image else None, error_msg, ""
         
-    def inference_dataset(self, prompt='.',  confidence_threshold=0.3):
+    def inference_dataset(self, prompt='.',  confidence_threshold=0.3, inference_format="Detection"):
         
         sel_dataset = self.selected_dataset
         success, dataset_info = self.get_dataset_by_name(sel_dataset)
@@ -1179,15 +1330,25 @@ class APP():
         output_dir = Path(self.datasets_dir).parent / '.output' / f"{self.selected_dataset}_coco" 
         output_dir.mkdir(parents=True, exist_ok=True)
         
+        initial_categories = None 
+        category_map = {}
+        
+        if inference_format == "Classification":
+            initial_categories = []
+        else:
+            initial_categories = [{"id": 1, "name": "object", "supercategory": ""}]
+            category_map["object"] = 1
+            
         coco_builder = COCODatasetBuilder(
                         base_dir=output_dir.as_posix(),
                         contributor="Chee Yee",
                         description="Dataset",
                         version="1.0.0",
-                        categories=[
-                                    {"id": 1, "name": "object", "supercategory": ""},
-                                ]
+                        categories=initial_categories
                     )
+        
+        # Save inference format to metadata
+        coco_builder.coco_json['info']['inference_format'] = inference_format
         
         imgs = [f for f in dataset_dir.iterdir() if f.suffix in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']]
 
@@ -1199,7 +1360,8 @@ class APP():
             annotated_image, text, detections = self.process_image(
                 image= img,
                 text_prompt= prompt,
-                confidence_threshold= confidence_threshold
+                confidence_threshold= confidence_threshold,
+                inference_format=inference_format
             )
 
             # Save Annotated Image
@@ -1215,11 +1377,43 @@ class APP():
                 xyxy = det['box']
                 xywh = [int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1])]
 
+
+                # Determine Category ID
+                cat_id = 1
+                cat_name = "object"
+                
+                if inference_format == "Classification":
+                    label_name = det.get('label', 'unknown')
+                    
+                    # Skip empty labels
+                    if not label_name or label_name.strip() == '':
+                        print(f"⚠️ Skipping annotation for empty label - image will have no tag")
+                        continue
+                    
+                    # Skip annotations with combined labels (e.g., "bear cat")
+                    if ' ' in label_name:
+                        print(f"⚠️ Skipping annotation for combined label: '{label_name}' - image will have no tag")
+                        continue
+                    
+                    if label_name in category_map:
+                        cat_id = category_map[label_name]
+                    else:
+                        # Create new category on the fly
+                        # Find next available ID (max of existing values or 0) + 1
+                        existing_ids = category_map.values()
+                        next_id = max(existing_ids) + 1 if existing_ids else 1
+                        
+                        coco_builder.add_category(next_id, label_name)
+                        category_map[label_name] = next_id
+                        cat_id = next_id
+                        print(f"Created new category: {label_name} (ID: {cat_id})")
+
                 coco_builder.add_annotation(
                     img_id=img_id,
-                    category_id=1,
+                    category_id=cat_id,
                     xywh=xywh,
-                    verbose=False
+                    verbose=False,
+                    segmentation=det.get('segmentation', [])
                 )
         coco_builder.save_json(Path(coco_builder.directories['annotations'])/'instances_Train.json')
         shutil.make_archive(coco_builder.directories['base'], 'zip', coco_builder.directories['base'])
@@ -1323,6 +1517,66 @@ class APP():
             # Use High-Level 'make_client'
             with make_client(url, credentials=(username, password)) as client:
                 
+                # --- Label Synchronization (Added for Classification/Auto-Labeling) ---
+                if project_id and annotations_file.exists():
+                     try:
+                         # Read categories from generated COCO file
+                         with open(annotations_file, 'r') as f:
+                             coco_data = json.load(f)
+                         
+                         dataset_categories = {cat['name'] for cat in coco_data.get('categories', [])}
+                         
+                         if dataset_categories:
+                             print(f"Syncing categories to CVAT Project {project_id}: {dataset_categories}")
+                             
+                             # DEBUG: Check for 'dog' specifically
+                             if "dog" in str(coco_data):
+                                 print("⚠️ DEBUG: Found 'dog' in JSON file content!")
+                             else:
+                                 print("ℹ️ DEBUG: 'dog' NOT found in JSON file content.")
+                             
+                             # Retrieve project and existing labels
+                             project_proxy = client.projects.retrieve(int(project_id))
+                             current_labels = project_proxy.get_labels()
+                             existing_names = {l.name for l in current_labels}
+                             
+                             new_labels = []
+                             for cat_name in dataset_categories:
+                                 if cat_name not in existing_names:
+                                     print(f"  + Adding New Label to Project: {cat_name}")
+                                     new_labels.append(
+                                         models.PatchedLabelRequest(
+                                             name=cat_name, 
+                                             color="#ff0000", 
+                                             attributes=[]
+                                         )
+                                     )
+                             
+                             if new_labels:
+                                 # We must send ALL labels (existing + new) in a batch update
+                                 # CRITICAL: Include 'id' for existing labels, otherwise CVAT tries to recreate them -> Unique Error
+                                 updated_labels = [
+                                     models.PatchedLabelRequest(
+                                         id=l.id,
+                                         name=l.name, 
+                                         color=l.color, 
+                                         attributes=[
+                                             models.AttributeRequest(
+                                                 name=a.name,
+                                                 input_type=a.input_type,
+                                                 mutable=a.mutable,
+                                                 values=a.values
+                                             ) for a in l.attributes
+                                         ]
+                                     ) for l in current_labels
+                                 ]
+                                 updated_labels.extend(new_labels)
+                                 
+                                 project_proxy.update(models.PatchedProjectWriteRequest(labels=updated_labels))
+                                 print(f"✅ Successfully synced {len(new_labels)} new labels to project.")
+                     except Exception as e:
+                         print(f"⚠️ Warning: Label synchronization failed (Non-critical): {e}")
+
                 # Define task spec first
                 task_spec = {
                     "name": f"{dataset_name}_vlm_annotation",
@@ -1367,6 +1621,101 @@ class APP():
                     filename=str(annotations_file)
                 )
                 
+                # --- Tag Annotation Logic (LabeledImage) ---
+                # Apply Classification tags to the frames
+                if annotations_file.exists():
+                     try:
+                         if 'coco_data' not in locals():
+                             with open(annotations_file, 'r') as f:
+                                 coco_data = json.load(f)
+                                 
+                         # Check Inference Format from Metadata
+                         inf_format = coco_data.get('info', {}).get('inference_format', 'Detection')
+                         print(f"DEBUG: Dataset Inference Format: {inf_format}")
+                         
+                         if inf_format == "Classification":
+                             print("Applying Tag Annotations (Classification)...")
+                             
+                             # 1. Retrieve Task Labels to get internal IDs
+                             # task = client.tasks.retrieve(task.id) # 'task' object is already returned by create
+                             task_labels = task.get_labels()
+                             label_name_to_id = {l.name: l.id for l in task_labels}
+                             
+                             # 2. Prepare mapping of Image Filename -> Frame Index
+                             if 'coco_data' not in locals():
+                                 with open(annotations_file, 'r') as f:
+                                     coco_data = json.load(f)
+                             
+                             images_list = coco_data.get('images', [])
+                             # Sort by file_name to match CVAT order
+                             sorted_images = sorted(images_list, key=lambda x: x['file_name'])
+                             
+                             image_id_to_frame = {}
+                             for idx, img_info in enumerate(sorted_images):
+                                 image_id_to_frame[img_info['id']] = idx
+                                 
+                             # 3. Create Tags from Annotations
+                             annotations = coco_data.get('annotations', [])
+                             categories = {c['id']: c['name'] for c in coco_data.get('categories', [])}
+                             
+                             tags_to_create = []
+                             
+                             for ann in annotations:
+                                 img_id = ann['image_id']
+                                 cat_id = ann['category_id']
+                                 
+                                 if img_id not in image_id_to_frame: continue
+                                 
+                                 frame_idx = image_id_to_frame[img_id]
+                                 cat_name = categories.get(cat_id)
+                                 
+                                 # Skip empty category names
+                                 if not cat_name or cat_name.strip() == '':
+                                     print(f"⚠️ Skipping CVAT tag for empty category name")
+                                     continue
+                                 
+                                 # Skip combined labels (e.g., "bear cat") for classification
+                                 if cat_name and ' ' in cat_name:
+                                     print(f"⚠️ Skipping CVAT tag for combined label: '{cat_name}'")
+                                     continue
+                                 
+                                 if cat_name and cat_name in label_name_to_id:
+                                     cvat_label_id = int(label_name_to_id[cat_name])
+                                     
+                                     # Simplify Request: Omit attributes/group if default
+                                     tag_annotation = models.LabeledImageRequest(
+                                         frame=int(frame_idx),
+                                         label_id=cvat_label_id
+                                     )
+                                     tags_to_create.append(tag_annotation)
+                             
+                             if tags_to_create:
+                                 # 4. Upload Tags to Job 0
+                                 jobs = task.get_jobs()
+                                 if jobs:
+                                     target_job = jobs[0]
+                                     
+                                     patch_request = models.PatchedLabeledDataRequest(
+                                         tags=tags_to_create
+                                     )
+                                     
+                                     
+                                     target_job.update_annotations(patch_request, action=SimpleNamespace(value="create"))
+                                     print(f"✅ Created {len(tags_to_create)} Tag Annotations on Job {target_job.id}.")
+                                 else:
+                                     print("⚠️ Warning: No jobs found for task. Skipping tags.")
+                             else:
+                                 print("ℹ️ No tags to create.")
+    
+                         else:
+                             print(f"ℹ️ Skipping Tag Annotation for format: {inf_format}")
+                             
+                     except Exception as e:
+                         print(f"⚠️ Warning: Tag Annotation failed: {e}")
+                         traceback.print_exc()
+                         
+                print(f"Task {task.name} (ID: {task.id}) created successfully.")
+                
                 task_url = f"{url.rstrip('/')}/tasks/{task.id}"
                 
                 # Cleanup output directory after successful upload
@@ -1398,7 +1747,7 @@ class APP():
             print(f"Detailed Error: {e}")
             return f"❌ Error during formatting: {str(e)}", None
 
-    def _download_and_format_task(self, task_id, output_zip_path, split_ratios=(70, 20, 10)):
+    def _download_and_format_task(self, task_id, output_zip_path, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
         """
         Helper method to download and format a task to a specific location.
         Returns (SuccessBool, Message)
@@ -1424,7 +1773,7 @@ class APP():
                     raw_zip_path.unlink()
                 
                 task.export_dataset(
-                    format_name="Ultralytics YOLO Detection 1.0",
+                    format_name=format_name,
                     filename=str(raw_zip_path),
                     include_images=True
                 )
@@ -1439,81 +1788,154 @@ class APP():
             with zipfile.ZipFile(raw_zip_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_extract_dir)
             
-            src_images_dir = temp_extract_dir / "images" / "train"
-            src_labels_dir = temp_extract_dir / "labels" / "train"
+            # Detect format type
+            is_classification = "Classification" in format_name
             
-            if not src_images_dir.exists():
-                return False, "Error: 'images/train' not found."
-
-            images = [f for f in src_images_dir.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']]
-            
-            # Shuffle and Split based on ratios
-            random.seed(42)
-            random.shuffle(images)
-            n_total = len(images)
-            
-            # Normalize ratios to ensure they sum to 100 (or handle raw counts, but percents are easier)
-            r_train, r_val, r_test = split_ratios
-            total_r = r_train + r_val + r_test
-            if total_r == 0: total_r = 100 # Avoid div by zero
-            
-            n_train = int(n_total * (r_train / total_r))
-            n_val = int(n_total * (r_val / total_r))
-            # Assign remaining to test to ensure all images are used (and handle rounding errors)
-            n_test = n_total - n_train - n_val
-            
-            train_images = images[:n_train]
-            val_images = images[n_train:n_train+n_val]
-            test_images = images[n_train+n_val:]
-            
-            # Prepare Structure
-            dirs_to_create = [
-                temp_build_dir / "images" / "Train",
-                temp_build_dir / "images" / "Validation",
-                temp_build_dir / "images" / "Test",
-                temp_build_dir / "labels" / "Train",
-                temp_build_dir / "labels" / "Validation",
-                temp_build_dir / "labels" / "Test"
-            ]
-            for d in dirs_to_create:
-                d.mkdir(parents=True, exist_ok=True)
-            
-            train_txt_lines = []
-            val_txt_lines = []
-            test_txt_lines = []
-            
-            def process_files(file_list, dest_subset, txt_list):
-                for img_path in file_list:
-                    shutil.copy2(img_path, temp_build_dir / "images" / dest_subset / img_path.name)
-                    label_name = img_path.stem + ".txt"
-                    src_label = src_labels_dir / label_name
-                    if src_label.exists():
-                        shutil.copy2(src_label, temp_build_dir / "labels" / dest_subset / label_name)
-                    txt_list.append(f"./images/{dest_subset}/{img_path.name}")
-
-            process_files(train_images, "Train", train_txt_lines)
-            process_files(val_images, "Validation", val_txt_lines)
-            process_files(test_images, "Test", test_txt_lines)
-            
-            with open(temp_build_dir / "Train.txt", "w") as f: f.write("\n".join(train_txt_lines))
-            with open(temp_build_dir / "Validation.txt", "w") as f: f.write("\n".join(val_txt_lines))
-            with open(temp_build_dir / "Test.txt", "w") as f: f.write("\n".join(test_txt_lines))
+            if is_classification:
+                # --- CLASSIFICATION FORMAT ---
+                # Structure: temp_extract_dir/train/dog/, train/cat/, etc.
+                src_train_dir = temp_extract_dir / "train"
                 
-            # Modify data.yaml
-            orig_yaml = temp_extract_dir / "data.yaml"
-            if orig_yaml.exists():
-                with open(orig_yaml, 'r') as f:
-                    yaml_content = f.read()
-                filtered_lines = [l for l in yaml_content.splitlines() if not (l.strip().startswith('train:') or l.strip().startswith('val:') or l.strip().startswith('validation:') or l.strip().startswith('test:'))]
-                final_yaml_content = "train: Train.txt\nval: Validation.txt\ntest: Test.txt\n" + "\n".join(filtered_lines)
-                with open(temp_build_dir / "data.yaml", "w") as f:
-                    f.write(final_yaml_content)
+                if not src_train_dir.exists():
+                    return False, "Error: 'train' directory not found for Classification format."
+                
+                # Get all class folders
+                class_folders = [d for d in src_train_dir.iterdir() if d.is_dir()]
+                
+                if not class_folders:
+                    return False, "Error: No class folders found in 'train' directory."
+                
+                print(f"Found {len(class_folders)} classes: {[d.name for d in class_folders]}")
+                
+                # Normalize split ratios
+                r_train, r_val, r_test = split_ratios
+                total_r = r_train + r_val + r_test
+                if total_r == 0: total_r = 100
+                
+                # Create output structure for each class
+                for class_folder in class_folders:
+                    class_name = class_folder.name
+                    
+                    # Create directories for this class
+                    (temp_build_dir / "train" / class_name).mkdir(parents=True, exist_ok=True)
+                    (temp_build_dir / "val" / class_name).mkdir(parents=True, exist_ok=True)
+                    (temp_build_dir / "test" / class_name).mkdir(parents=True, exist_ok=True)
+                    
+                    # Get all images in this class folder
+                    images = [f for f in class_folder.iterdir() 
+                             if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']]
+                    
+                    if not images:
+                        print(f"Warning: No images found in class '{class_name}'")
+                        continue
+                    
+                    # Shuffle and split
+                    random.seed(42)
+                    random.shuffle(images)
+                    n_total = len(images)
+                    
+                    n_train = int(n_total * (r_train / total_r))
+                    n_val = int(n_total * (r_val / total_r))
+                    n_test = n_total - n_train - n_val
+                    
+                    train_imgs = images[:n_train]
+                    val_imgs = images[n_train:n_train+n_val]
+                    test_imgs = images[n_train+n_val:]
+                    
+                    # Copy images to respective folders
+                    for img in train_imgs:
+                        shutil.copy2(img, temp_build_dir / "train" / class_name / img.name)
+                    for img in val_imgs:
+                        shutil.copy2(img, temp_build_dir / "val" / class_name / img.name)
+                    for img in test_imgs:
+                        shutil.copy2(img, temp_build_dir / "test" / class_name / img.name)
+                    
+                    print(f"Class '{class_name}': {n_train} train, {n_val} val, {n_test} test")
+                
+                # No data.yaml needed for Classification - YOLOv8 infers classes from folder structure
+                
+            else:
+                # --- DETECTION/SEGMENTATION FORMAT ---
+                # Structure: temp_extract_dir/images/train/, labels/train/
+                src_images_dir = temp_extract_dir / "images" / "train"
+                src_labels_dir = temp_extract_dir / "labels" / "train"
+                
+                if not src_images_dir.exists():
+                    return False, "Error: 'images/train' not found."
+
+                images = [f for f in src_images_dir.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']]
+                
+                # Shuffle and Split based on ratios
+                random.seed(42)
+                random.shuffle(images)
+                n_total = len(images)
+                
+                # Normalize ratios to ensure they sum to 100 (or handle raw counts, but percents are easier)
+                r_train, r_val, r_test = split_ratios
+                total_r = r_train + r_val + r_test
+                if total_r == 0: total_r = 100 # Avoid div by zero
+                
+                n_train = int(n_total * (r_train / total_r))
+                n_val = int(n_total * (r_val / total_r))
+                # Assign remaining to test to ensure all images are used (and handle rounding errors)
+                n_test = n_total - n_train - n_val
+                
+                train_images = images[:n_train]
+                val_images = images[n_train:n_train+n_val]
+                test_images = images[n_train+n_val:]
+                
+                # Prepare Structure
+                dirs_to_create = [
+                    temp_build_dir / "images" / "Train",
+                    temp_build_dir / "images" / "Validation",
+                    temp_build_dir / "images" / "Test",
+                    temp_build_dir / "labels" / "Train",
+                    temp_build_dir / "labels" / "Validation",
+                    temp_build_dir / "labels" / "Test"
+                ]
+                for d in dirs_to_create:
+                    d.mkdir(parents=True, exist_ok=True)
+                
+                train_txt_lines = []
+                val_txt_lines = []
+                test_txt_lines = []
+                
+                def process_files(file_list, dest_subset, txt_list):
+                    for img_path in file_list:
+                        shutil.copy2(img_path, temp_build_dir / "images" / dest_subset / img_path.name)
+                        label_name = img_path.stem + ".txt"
+                        src_label = src_labels_dir / label_name
+                        if src_label.exists():
+                            shutil.copy2(src_label, temp_build_dir / "labels" / dest_subset / label_name)
+                        txt_list.append(f"./images/{dest_subset}/{img_path.name}")
+
+                process_files(train_images, "Train", train_txt_lines)
+                process_files(val_images, "Validation", val_txt_lines)
+                process_files(test_images, "Test", test_txt_lines)
+                
+                with open(temp_build_dir / "Train.txt", "w") as f: f.write("\n".join(train_txt_lines))
+                with open(temp_build_dir / "Validation.txt", "w") as f: f.write("\n".join(val_txt_lines))
+                with open(temp_build_dir / "Test.txt", "w") as f: f.write("\n".join(test_txt_lines))
+                    
+                # Modify data.yaml
+                orig_yaml = temp_extract_dir / "data.yaml"
+                if orig_yaml.exists():
+                    with open(orig_yaml, 'r') as f:
+                        yaml_content = f.read()
+                    filtered_lines = [l for l in yaml_content.splitlines() if not (l.strip().startswith('train:') or l.strip().startswith('val:') or l.strip().startswith('validation:') or l.strip().startswith('test:'))]
+                    final_yaml_content = "train: Train.txt\nval: Validation.txt\ntest: Test.txt\n" + "\n".join(filtered_lines)
+                    with open(temp_build_dir / "data.yaml", "w") as f:
+                        f.write(final_yaml_content)
             
             # Zip
             output_zip_path.parent.mkdir(parents=True, exist_ok=True)
             if output_zip_path.exists():
                 output_zip_path.unlink()
-            shutil.make_archive(str(output_zip_path).replace('.zip', ''), 'zip', temp_build_dir)
+            shutil.make_archive(
+                base_name=str(output_zip_path).replace('.zip', ''),
+                format='zip',
+                root_dir=temp_build_dir
+            )
             
             # Cleanup Raw
             if raw_zip_path.exists(): raw_zip_path.unlink()
@@ -1527,7 +1949,7 @@ class APP():
             if temp_build_dir.exists(): shutil.rmtree(temp_build_dir, ignore_errors=True)
 
 
-    def process_cvat_task(self, task_id, custom_name=None, split_ratios=(70, 20, 10)):
+    def process_cvat_task(self, task_id, custom_name=None, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
         """
         Public wrapper to download/format and register the dataset.
         """
@@ -1543,7 +1965,7 @@ class APP():
             formatted_zip_path = Path(self.datasets_dir) / f"formatted_task_{task_id}.zip"
             dataset_entry_name = f"Task_{task_id}"
             
-        success, msg = self._download_and_format_task(task_id, formatted_zip_path, split_ratios)
+        success, msg = self._download_and_format_task(task_id, formatted_zip_path, split_ratios, format_name=format_name)
         
         if not success:
             return f"❌ {msg}", None
@@ -1584,6 +2006,7 @@ class APP():
     def inspect_dataset_zip(self, zip_path):
         """
         Inspect a local dataset zip file and return stats.
+        Supports both Detection/Segmentation and Classification formats.
         """
         if not zip_path: return {"status": "Error", "message": "No path provided"}
         
@@ -1603,6 +2026,9 @@ class APP():
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                 zip_ref.extractall(temp_inspect_dir)
                 
+            # Detect format type
+            is_classification = (temp_inspect_dir / "train").exists() and (temp_inspect_dir / "train").is_dir()
+            
             # Gather Stats
             stats = {
                 "status": "Ready",
@@ -1613,19 +2039,43 @@ class APP():
                 "class_names": []
             }
             
-            for subset in ["Train", "Validation", "Test"]:
-                img_dir = temp_inspect_dir / "images" / subset
-                lbl_dir = temp_inspect_dir / "labels" / subset
-                stats["images"][subset] = len(list(img_dir.iterdir())) if img_dir.exists() else 0
-                stats["labels"][subset] = len(list(lbl_dir.iterdir())) if lbl_dir.exists() else 0
-                
-            yaml_path = temp_inspect_dir / "data.yaml"
-            if yaml_path.exists():
-                with open(yaml_path, 'r') as f:
-                    import yaml
-                    data = yaml.safe_load(f)
-                    stats["classes"] = data.get('nc', 0)
-                    stats["class_names"] = data.get('names', [])
+            if is_classification:
+                # Classification format: train/dog/, val/dog/, test/dog/
+                for subset in ["train", "val", "test"]:
+                    subset_dir = temp_inspect_dir / subset
+                    if subset_dir.exists():
+                        # Count images across all class folders
+                        img_count = 0
+                        class_folders = [d for d in subset_dir.iterdir() if d.is_dir()]
+                        
+                        for class_folder in class_folders:
+                            img_count += len([f for f in class_folder.iterdir() 
+                                            if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']])
+                        
+                        # Use capitalized names for consistency with UI
+                        subset_key = subset.capitalize() if subset != "val" else "Validation"
+                        stats["images"][subset_key] = img_count
+                        stats["labels"][subset_key] = 0  # Classification doesn't have separate label files
+                        
+                        # Get class names from first subset that exists
+                        if not stats["class_names"] and class_folders:
+                            stats["class_names"] = sorted([d.name for d in class_folders])
+                            stats["classes"] = len(stats["class_names"])
+            else:
+                # Detection/Segmentation format: images/Train/, labels/Train/
+                for subset in ["Train", "Validation", "Test"]:
+                    img_dir = temp_inspect_dir / "images" / subset
+                    lbl_dir = temp_inspect_dir / "labels" / subset
+                    stats["images"][subset] = len(list(img_dir.iterdir())) if img_dir.exists() else 0
+                    stats["labels"][subset] = len(list(lbl_dir.iterdir())) if lbl_dir.exists() else 0
+                    
+                yaml_path = temp_inspect_dir / "data.yaml"
+                if yaml_path.exists():
+                    with open(yaml_path, 'r') as f:
+                        import yaml
+                        data = yaml.safe_load(f)
+                        stats["classes"] = data.get('nc', 0)
+                        stats["class_names"] = data.get('names', [])
             
             # Apply robust sanitization before returning
             return self._sanitize_stats_for_json(stats)

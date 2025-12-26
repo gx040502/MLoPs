@@ -252,6 +252,13 @@ def load_dataset_interface(app_interface, app):
                         lines=2
                     )
 
+                    inference_format = gr.Dropdown(
+                        choices=["Detection", "Segmentation", "Classification"],
+                        value="Detection",
+                        label="Inference Format",
+                        interactive=True
+                    )
+
                     # ---------------------------------
                         
                     vlm_confidence_slider = gr.Slider(
@@ -306,24 +313,28 @@ def load_dataset_interface(app_interface, app):
             # Event handlers
             detect_btn.click(
                 fn=app.process_image,
-                inputs=[vlm_image_input, vlm_text_input, vlm_confidence_slider],
+                inputs=[vlm_image_input, vlm_text_input, vlm_confidence_slider, inference_format],
                 outputs=[vlm_output_image, detection_info, raw_output]
             ).then(
-                fn=lambda prompt, conf: f"Prompt: {prompt}\nConfidence: {conf}",
-                inputs=[vlm_text_input, vlm_confidence_slider],
+                fn=lambda prompt, conf, fmt: f"Prompt: {prompt}\nConfidence: {conf}\nFormat: {fmt}",
+                inputs=[vlm_text_input, vlm_confidence_slider, inference_format],
                 outputs=[prompt_output]
             )
             
             # --- VLM Dataset Reselection Events ---
             def on_vlm_dataset_select(dataset_name):
                 if not dataset_name: return gr.update(visible=False), None
+                
+                # Always select the dataset so that subsequent components (gallery, image input) 
+                # can access the correct path via app.selected_dataset
+                app.select_dataset(dataset_name)
+
                 video_files = app.scan_for_videos(dataset_name)
                 has_videos = len(video_files) > 0
                 if has_videos:
                      df_data = [[v["Video Name"], v["Duration"]] for v in video_files]
                      return gr.update(visible=True), df_data
                 else:
-                     app.select_dataset(dataset_name)
                      return gr.update(visible=False), None
 
             vlm_dataset_dropdown.change(
@@ -367,7 +378,7 @@ def load_dataset_interface(app_interface, app):
 
             inference_btn.click(
                 fn=app.inference_dataset,
-                inputs=[vlm_text_input, vlm_confidence_slider],
+                inputs=[vlm_text_input, vlm_confidence_slider, inference_format],
                 outputs=[inference_output]
             ).then(
                 fn=lambda: [gr.Button(visible=False), gr.Button(visible=True), gr.Dropdown(visible=True)],
@@ -385,7 +396,7 @@ def load_dataset_interface(app_interface, app):
             
             vlm_text_input.submit(
                 fn=app.process_image,
-                inputs=[vlm_image_input, vlm_text_input, vlm_confidence_slider],
+                inputs=[vlm_image_input, vlm_text_input, vlm_confidence_slider, inference_format],
                 outputs=[vlm_output_image, detection_info, raw_output]
             )
             
@@ -441,6 +452,14 @@ def load_dataset_interface(app_interface, app):
                     visible=True, 
                     interactive=True
                 )
+
+                format_dropdown = gr.Dropdown(
+                    label="Choose Format",
+                    choices=["Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0","Ultralytics YOLO Classification 1.0"],
+                    value="Ultralytics YOLO Detection 1.0",
+                    interactive=True
+                )
+
                 
 
 
@@ -491,11 +510,19 @@ def load_dataset_interface(app_interface, app):
                     )
                     
                     model_dropdown = gr.Dropdown(
-                        choices=app.get_pretrained_models(),
+                        choices=app.get_pretrained_models("Ultralytics YOLO Detection 1.0"),
                         label="Select Pre-trained Model",
                         interactive=True
                     )
+                def on_format_change(format_val):
+                     models = app.get_pretrained_models(format_val)
+                     return gr.update(choices=models, value=models[0] if models else None)
 
+                format_dropdown.change(
+                    fn=on_format_change,
+                    inputs=[format_dropdown],
+                    outputs=[model_dropdown] 
+                )
                 gr.Markdown("#### 📊 Dataset Split Ratios (Must sum approx to 10)")
                 with gr.Row():
                     train_ratio = gr.Number(value=7, label="Train Ratio", precision=0)
@@ -560,7 +587,7 @@ def load_dataset_interface(app_interface, app):
 
 
 
-                def trigger_training(task_id,custom_name, model, epochs, imgsz, manual_aug, 
+                def trigger_training(task_id, format_name, custom_name, model, epochs, imgsz, manual_aug, 
                                      r_train, r_val, r_test,
                                      h_h, h_s, h_v, bgr_p, 
                                      deg, trans, scl, shr, 
@@ -569,7 +596,7 @@ def load_dataset_interface(app_interface, app):
                                      ers):
                     # 1. Format/Prepare Data
                     split_ratios = (r_train, r_val, r_test)
-                    msg, path = app.process_cvat_task(task_id, custom_name, split_ratios)
+                    msg, path = app.process_cvat_task(task_id, custom_name, split_ratios, format_name=format_name)
                     if "Error" in msg:
                          yield msg, "❌ Format Failed", None
                          return
@@ -615,7 +642,9 @@ def load_dataset_interface(app_interface, app):
                         
                     yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name
                     
-                    result = app.start_training(path, model, epochs, imgsz, manual_aug, **aug_args)
+                    yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name
+                    
+                    result = app.start_training(path, model, epochs, imgsz, manual_aug, format_name=format_name, **aug_args)
                     yield result, stats_str, None
 
                 
@@ -660,7 +689,7 @@ def load_dataset_interface(app_interface, app):
                 train_btn.click(
                     fn=trigger_training,
                     inputs=[
-                        cvat_tasks_dropdown, filename_input, model_dropdown, experiments_slider, imgsz_slider, manual_aug_checkbox,
+                        cvat_tasks_dropdown, format_dropdown, filename_input, model_dropdown, experiments_slider, imgsz_slider, manual_aug_checkbox,
                         train_ratio, val_ratio, test_ratio,
                         hsv_h, hsv_s, hsv_v, bgr,
                         degrees, translate, scale, shear,
@@ -827,7 +856,17 @@ def load_dataset_interface(app_interface, app):
                     details = app.get_model_details(project_name, model_name)
                     # Update plots
                     plots = app.get_model_plots(project_name, model_name)
-                    return details, gr.update(value=plots)
+                    
+                    # Detect if it's a classification model
+                    is_classification = "-cls" in model_name.lower() if model_name else False
+                    
+                    # Hide conf/IOU sliders for classification models
+                    return (
+                        details, 
+                        gr.update(value=plots),
+                        gr.update(visible=not is_classification),  # conf_slider
+                        gr.update(visible=not is_classification)   # iou_slider
+                    )
 
                 def on_gallery_select(evt: gr.SelectData):
                     return evt.value["image"]["path"]
@@ -845,7 +884,7 @@ def load_dataset_interface(app_interface, app):
                 train_model_dd.change(
                     fn=on_model_change,
                     inputs=[train_project_dd, train_model_dd],
-                    outputs=[model_details, model_plots_gallery]
+                    outputs=[model_details, model_plots_gallery, conf_slider, iou_slider]
                 )
                 
                 predict_btn.click(

@@ -4,7 +4,7 @@ from ultralytics import YOLO, settings
 
 import utils
 
-def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, aug_params=None):
+def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, aug_params=None, format_name="Ultralytics YOLO Detection 1.0"):
     """
     Executes the training process.
     
@@ -15,11 +15,12 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         imgsz (int): Input image size
         manual_aug (bool): Whether to use manual augmentation override
         aug_params (dict): Dictionary of augmentation parameters
+        format_name (str): Format of the dataset (Detection/Segmentation/Classification)
         model_output_name (str): Name for the trained model run
     """
     
     print(f"Starting training for project: {project_name}")
-    print(f"Model: {model_path}, Epochs: {epochs}, Imgsz: {imgsz}, Manual Aug: {manual_aug}")
+    print(f"Model: {model_path}, Epochs: {epochs}, Imgsz: {imgsz}, Manual Aug: {manual_aug}, Format: {format_name}")
 
     # Initialize ProjectManager to get paths
     project = utils.ProjectManager(project_name)
@@ -92,15 +93,23 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         model.add_callback("on_train_epoch_start", callback.on_train_epoch_start)
         model.add_callback("on_train_epoch_end", callback.on_train_epoch_end)
 
-        # --- END CALLBACK DEFINITION ---
+        
+        # Determine data path based on format
+        is_classification = "Classification" in format_name
+        if is_classification:
+            # Classification: Pass directory path (not data.yaml)
+            data_path = project.dataset_dir
+        else:
+            # Detection/Segmentation: Pass data.yaml file
+            data_path = project.dataset_dir / 'data.yaml'
         
         # Prepare training arguments
         train_args = {
             'project': project.train_dir,           # Explicitly set output dir
-            'data': project.dataset_dir / 'data.yaml', # Explicitly set data path
+            'data': data_path,                      # Directory for classification, yaml for others
             'device': 0,
             'batch': -1,
-            'patience': 300,
+            'patience': epochs,
             'epochs': epochs,
             'workers': 1,
             'name': f'{model_output_name}_{epochs}',
