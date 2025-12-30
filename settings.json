@@ -1,7 +1,7 @@
 {
     "cvat_url": "http://100.110.21.83:8080",
-    "cvat_username": "",
-    "cvat_password": "",
+    "cvat_username": "gyapxun",
+    "cvat_password": "mmcgtm2014",
     "datasets_dir": "./.gradio",
     "datasets": [
         {
