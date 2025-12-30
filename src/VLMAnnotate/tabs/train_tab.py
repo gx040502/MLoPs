@@ -1,27 +1,19 @@
 import gradio as gr
-from src.VLMAnnotate.ui_logic import cleanup_and_refresh_ui
 
 def create_tab(app):
     with gr.Tab("🧠 Train Model", id="train_tab") as tab:
         gr.Markdown("## Train New Model")
-        gr.Markdown("Train a new model from your CVAT Task")
+        gr.Markdown("Train a new model from your CVAT Project")
         
         with gr.Column():
+            # Get initial CVAT projects and select first one
+            cvat_projects_initial = app.get_cvat_projects()
+            cvat_initial_value = cvat_projects_initial[0] if cvat_projects_initial else None
+            
             cvat_projects_dropdown = gr.Dropdown(
-                label="Choose CVAT Projects", 
-                choices=app.get_cvat_projects(), 
-                visible=False, 
-                interactive=False
-            )
-
-            # Get initial CVAT tasks and select first one
-            cvat_tasks_initial = app.get_cvat_tasks(cvat_projects_dropdown.value)
-            cvat_initial_value = cvat_tasks_initial[0] if cvat_tasks_initial else None
-
-            cvat_tasks_dropdown = gr.Dropdown(
-                label="Choose CVAT Tasks", 
-                choices=cvat_tasks_initial,
-                value=cvat_initial_value,  # Select first task on load
+                label="Choose CVAT Project", 
+                choices=cvat_projects_initial,
+                value=cvat_initial_value,
                 visible=True, 
                 interactive=True
             )
@@ -165,7 +157,6 @@ def create_tab(app):
     return {
         "tab": tab,
         "cvat_projects_dropdown": cvat_projects_dropdown,
-        "cvat_tasks_dropdown": cvat_tasks_dropdown,
         "format_dropdown": format_dropdown,
         "model_dropdown": model_dropdown,
         "train_config_checkbox": train_config_checkbox,
@@ -208,7 +199,7 @@ def setup_events(app, components, all_components):
     def toggle_aug_settings(checkbox_val): 
         return gr.update(visible=checkbox_val)
                 
-    def trigger_training(task_id, format_name, custom_name, model, epochs, imgsz, manual_aug, 
+    def trigger_training(project_id, format_name, custom_name, model, epochs, imgsz, manual_aug, 
                                      r_train, r_val, r_test,
                                      h_h, h_s, h_v, bgr_p, 
                                      deg, trans, scl, shr, 
@@ -217,7 +208,7 @@ def setup_events(app, components, all_components):
                                      ers): 
         # 1. Format/Prepare Data
         split_ratios = (r_train, r_val, r_test)
-        msg, path = app.process_cvat_task(task_id, custom_name, split_ratios, format_name=format_name)
+        msg, path = app.process_cvat_project(project_id, custom_name, split_ratios, format_name=format_name)
         if "Error" in msg:
             yield msg, "❌ Format Failed", None
             return
@@ -252,8 +243,8 @@ def setup_events(app, components, all_components):
             else:
                 project_name = s_name
         else:
-            clean_id = str(task_id).split(':')[0].strip()
-            project_name = f"Task_{clean_id}"
+            clean_id = str(project_id).split(':')[0].strip()
+            project_name = f"Project_{clean_id}"
                         
         yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name
                     
@@ -288,17 +279,17 @@ def setup_events(app, components, all_components):
             return gr.update(value=f"⏳ Estimated Time: Error reading status ({e})", visible=True)
 
     def toggle_training_mode(checked): 
-        """Toggle between CVAT task training and formatted dataset training"""
+        """Toggle between CVAT project training and formatted dataset training"""
         if checked:
             return (
-                gr.update(visible=False),  # cvat_tasks_dropdown
+                gr.update(visible=False),  # cvat_projects_dropdown
                 gr.update(visible=False),  # train_btn
                 gr.update(visible=True),   # formatted_dataset_group
                 gr.update(visible=True)    # train_own_btn
             )
         else:
             return (
-                gr.update(visible=True),   # cvat_tasks_dropdown
+                gr.update(visible=True),   # cvat_projects_dropdown
                 gr.update(visible=True),   # train_btn
                 gr.update(visible=False),  # formatted_dataset_group
                 gr.update(visible=False)   # train_own_btn
@@ -350,11 +341,11 @@ def setup_events(app, components, all_components):
                                      format_name=format_name, **aug_args)
         yield result, stats_str, None
 
-    def load_sample_image(task_str): 
-        if not task_str: return None, None
-        task_str = str(task_str) # Ensure string
-        task_id = task_str.split(':')[0].strip() if ':' in task_str else task_str
-        images = app.get_random_sample_images(task_id)
+    def load_sample_image(project_str): 
+        if not project_str: return None, None
+        project_str = str(project_str) # Ensure string
+        project_id = project_str.split(':')[0].strip() if ':' in project_str else project_str
+        images = app.get_random_sample_images(project_id)
         if not images: return None, None
         return images, images[0] # State stores list, UI shows 1st image initially
 
@@ -388,7 +379,7 @@ def setup_events(app, components, all_components):
     c["train_btn"].click(
         fn=trigger_training,
         inputs=[
-            c["cvat_tasks_dropdown"], c["format_dropdown"], c["filename_input"], c["model_dropdown"], c["experiments_slider"], c["imgsz_slider"], c["manual_aug_checkbox"],
+            c["cvat_projects_dropdown"], c["format_dropdown"], c["filename_input"], c["model_dropdown"], c["experiments_slider"], c["imgsz_slider"], c["manual_aug_checkbox"],
             c["train_ratio"], c["val_ratio"], c["test_ratio"],
             c["hsv_h"], c["hsv_s"], c["hsv_v"], c["bgr"],
             c["degrees"], c["translate"], c["scale"], c["shear"],
@@ -402,7 +393,7 @@ def setup_events(app, components, all_components):
     c["use_formatted_checkbox"].change(
         fn=toggle_training_mode,
         inputs=[c["use_formatted_checkbox"]],
-        outputs=[c["cvat_tasks_dropdown"], c["train_btn"], c["formatted_dataset_group"], c["train_own_btn"]]
+        outputs=[c["cvat_projects_dropdown"], c["train_btn"], c["formatted_dataset_group"], c["train_own_btn"]]
     )
     
     c["train_config_checkbox"].change(
@@ -428,7 +419,7 @@ def setup_events(app, components, all_components):
     
     c["load_sample_btn"].click(
         fn=load_sample_image,
-        inputs=[c["cvat_tasks_dropdown"]],
+        inputs=[c["cvat_projects_dropdown"]],
         outputs=[c["base_image_state"], c["aug_preview_img"]]
     )
     

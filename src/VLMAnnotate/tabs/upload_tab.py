@@ -12,32 +12,43 @@ def create_tab(app):
                 gr.Markdown("## Upload New Dataset")
                 
                 zip_file_input = gr.File(
-                    label="Upload ZIP File", 
+                    label="Upload Raw Dataset ZIP File", 
                     file_count="single", 
                     file_types=[".zip"], 
                     type="filepath",
-                    height=207
+                    height=207,
+                    visible=True
                 )
-                
-                upload_btn = gr.Button("📤 Upload & Extract", variant="primary", size="lg", elem_id="btn",visible=True)
-                
-                upload_status = gr.Markdown(
-                    "Ready to upload..."
+
+                zip_file_formatted = gr.File(
+                    label="Upload Formatted Dataset ZIP File", 
+                    file_count="single", 
+                    file_types=[".zip"], 
+                    type="filepath",
+                    height=207,
+                    visible=False
                 )
 
             # Right Column: Management
             with gr.Column(scale=1):
-                gr.Markdown("## Available Datasets")
+                gr.Markdown("## Status")
+                
+                # State to track current zip/dataset
+                # Stores: {"zip_path": str, "dataset_name": str, "has_videos": bool}
+                current_dataset_state = gr.State(value={})
 
-                raw_datasets_initial = app.get_all_datasets()
-                raw_initial_choices = [d["name"] for d in raw_datasets_initial]
-                raw_initial_value = raw_initial_choices[0] if raw_initial_choices else None
+                click_instruction = gr.Markdown(
+                     "### 👈 Please upload a dataset to begin",
+                     visible=True
+                )
 
                 checkbox_formatted = gr.Checkbox(
                     label="Formatted Dataset", 
                     interactive=True,
                     value=False
                 )
+                
+                # Formatted mode components
                 dataset_format_dropdown = gr.Dropdown(
                     choices=["COCO 1.0", "Ultralytics YOLO Classification 1.0", "Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0"],
                     value="COCO 1.0",
@@ -45,37 +56,17 @@ def create_tab(app):
                     interactive=True,
                     visible=False
                 )
-
-                dataset_dropdown = gr.Dropdown(
-                    choices=raw_initial_choices,
-                    value=raw_initial_value,
-                    label="Select Dataset",
-                    interactive=True,
-                    visible=True
-                )
-                
-                status_output = gr.Textbox(
-                    label="Selected Dataset", 
-                    interactive=False, 
-                    lines=2,
-                    value="Ready",
-                    visible=True
-                )
                 
                 with gr.Row():
-                    delete_btn = gr.Button("🗑️ Delete Selected Dataset", variant="secondary", elem_id="del_btn",visible=True)
-                    annotate_btn = gr.Button("📂 Annotate", variant="primary", elem_id="btn",visible=True)
+                    annotate_btn = gr.Button("📂 Annotate", variant="primary", elem_id="btn", visible=True, interactive=False)
                     upload_cvat_btn = gr.Button("📤 Upload to CVAT", variant="primary", size="lg", elem_id="btn",visible=False)
                 
-                delete_status = gr.Markdown(visible=True)
-                upload_cvat_status = gr.Markdown(
-                    "Ready to upload..."
-                )
-
+                upload_cvat_status = gr.Markdown(visible=False)
+                
         # Video Frame Extraction Configuration
         with gr.Group(visible=False) as video_config_group:
-            gr.Markdown("### 🎥 Video Processing Enabled")
-            gr.Markdown("This dataset contains video files. Extracted frames will be combined with existing images into a **temporary dataset** for annotation.")
+            gr.Markdown("### 🎥 Video Processing Detected")
+            gr.Markdown("This dataset contains video files. Adjust extraction interval if needed.")
             interval_slider = gr.Slider(
                 minimum=0.0, maximum=60.0, value=1.0, step=0.1, 
                 label="Extraction Interval (seconds)"
@@ -87,52 +78,51 @@ def create_tab(app):
                 col_count=(2, "fixed"),
                 type="pandas",
                 interactive=False,
-                label="Videos to Process"
+                label="Videos found in archive"
             )
 
     return {
         "tab": tab,
         "zip_file_input": zip_file_input,
-        "upload_btn": upload_btn,
-        "upload_status": upload_status,
-        "dataset_dropdown": dataset_dropdown,
-        "status_output": status_output,
-        "delete_btn": delete_btn,
+        "zip_file_formatted": zip_file_formatted,
         "annotate_btn": annotate_btn,
-        "delete_status": delete_status,
         "video_config_group": video_config_group,
         "interval_slider": interval_slider,
         "video_dataframe": video_dataframe,
         "checkbox_formatted": checkbox_formatted,
         "dataset_format_dropdown": dataset_format_dropdown,
         "upload_cvat_btn": upload_cvat_btn,
-        "upload_cvat_status": upload_cvat_status
+        "upload_cvat_status": upload_cvat_status,
+        "current_dataset_state": current_dataset_state,
+        "click_instruction": click_instruction
     }
 
 def setup_events(app, components, all_components):
     # Unpack specific components needed for this tab
     c = components
+    
     def toggle_button_mode(checked):
         if checked:
             return (
-                gr.update(visible=True),  # dataset_format_dropdown
-                gr.update(visible=True),  # upload_cvat_btn
-                gr.update(visible=False),   # delete_btn
-                gr.update(visible=False),   # annotate_btn
-                gr.update(visible=False),   # dataset_dropdown
-                gr.update(visible=False),   # status_output
-                gr.update(visible=False),   # upload_btn
+                gr.update(visible=True),   # dataset_format_dropdown
+                gr.update(visible=True),   # upload_cvat_btn
+                gr.update(visible=False),  # annotate_btn
+                gr.update(visible=True),   # zip_file_formatted
+                gr.update(visible=False),  # zip_file_input
+                gr.update(visible=False),   # click_instruction (hide for formatted)
+                gr.update(visible=False)    # video_config_group (hide)
             )
         else:
             return (
                 gr.update(visible=False),  # dataset_format_dropdown
-                gr.update(visible=False),   # upload_cvat_btn
-                gr.update(visible=True),   # delete_btn
+                gr.update(visible=False),  # upload_cvat_btn
                 gr.update(visible=True),   # annotate_btn
-                gr.update(visible=True),   # dataset_dropdown
-                gr.update(visible=True),   # status_output
-                gr.update(visible=True),   # upload_btn
+                gr.update(visible=False),  # zip_file_formatted
+                gr.update(visible=True),   # zip_file_input
+                gr.update(visible=True),    # click_instruction
+                gr.update(visible=False)    # video_config_group (hide initially)
             )
+
     
     def upload_cvat_handler(zip_file, dataset_format):
         """Handle CVAT upload button click"""
@@ -143,87 +133,109 @@ def setup_events(app, components, all_components):
         return message
     
     # Internal logic functions
-    def upload_and_refresh(zip_file) -> tuple: 
-        """Handle upload and refresh datasets"""
-        success, message = app.upload_dataset_by_zip(zip_file)
-        if success:
-            message = "Successfully uploaded"
-        updated_datasets = refresh_datasets_state(app)
-        return message, updated_datasets
-
-    def delete_dataset_handler(dataset_name: str) -> tuple:
-        """Handle dataset deletion and return updated state"""
-        success, message = app.remove_dataset(dataset_name)
-        updated_datasets = refresh_datasets_state(app)
-        return message, updated_datasets
-
-    def on_dataset_select(dataset_name):
-        # 1. Select the dataset in app
-        success, msg = app.select_dataset(dataset_name) if dataset_name else (False, "Please select a dataset first")
-        if not dataset_name:
-            return msg, gr.update(visible=False), None
-            
-        # 2. Check for videos
-        video_files = app.scan_for_videos(dataset_name)
-        has_videos = len(video_files) > 0
-        
-        # 3. Prepare config DF data
-        if has_videos:
-             df_data = [[v["Video Name"], v["Duration"]] for v in video_files]
-             return msg, gr.update(visible=True), df_data
-        else:
-             return msg, gr.update(visible=False), None
-
-    def on_annotate_click(dataset_name, video_df, interval_val):
-        # 1. Validation
-        if not dataset_name:
+    def on_zip_changed(zip_file, state):
+        """
+        Triggered when a raw zip file is uploaded.
+        1. Uploads dataset (flattening logic included).
+        2. Scans for videos.
+        3. Updates State and UI.
+        """
+        if not zip_file:
             return (
-                "⚠️ Please select a dataset first", 
-                gr.update(), # No tab switch
-                gr.update(), # No dropdown update
-                gr.update(), # No image update
-                gr.update()  # No gallery update
+                "Waiting for upload...",
+                gr.update(visible=False), # video_config
+                gr.update(value=None),    # dataframe
+                gr.update(interactive=False), # annotate_btn
+                state
             )
             
-        target_dataset = dataset_name
+        success, message, project_name = app.upload_dataset_by_zip(zip_file)
         
-        # 2. Check for video processing
-        import pandas as pd
-        has_data = False
-        if isinstance(video_df, pd.DataFrame):
-            has_data = not video_df.empty
-        elif isinstance(video_df, list):
-            has_data = len(video_df) > 0
+        if not success:
+            return (
+                f"❌ Error: {message}",
+                gr.update(visible=False),
+                gr.update(value=None),
+                gr.update(interactive=False),
+                state
+            )
             
-        if has_data:
-             # This creates a temp dataset and selects it in app
+        # Scan for videos
+        state = state or {}
+        state["zip_path"] = zip_file
+        state["dataset_name"] = project_name
+        
+        video_files = app.scan_for_videos(project_name)
+        has_videos = len(video_files) > 0
+        state["has_videos"] = has_videos
+        
+        df_data = None
+        video_visible = False
+        
+        if has_videos:
+            df_data = [[v["Video Name"], v["Duration"]] for v in video_files]
+            video_visible = True
+            
+        return (
+            f"✅ Ready: {project_name}\n" + ("(Videos detected)" if has_videos else ""),
+            gr.update(visible=video_visible),
+            gr.update(value=df_data),
+            gr.update(interactive=True),
+            state
+        )
+
+    def on_annotate_click(state, video_df, interval_val):
+        """
+        Handles annotation logic:
+        1. If videos -> Extract frames -> New Zip -> Replace -> Select
+        2. If no videos -> Use original Zip -> Select
+        3. Switch Tab
+        """
+        if not state or not state.get("dataset_name"):
+            return (
+                gr.update(), # No tab switch
+                gr.update(), # No dropdown
+                gr.update(), # No image
+                gr.update()  # No gallery
+            )
+            
+        dataset_name = state["dataset_name"]
+        has_videos = state.get("has_videos", False)
+        
+        final_dataset_name = dataset_name
+        
+        if has_videos:
+            # Need to process videos
+             # This creates a NEW temp dataset (and returns the zip path) AND selects it
              success, result = app.extract_frames_from_dataset(dataset_name, video_df, interval_val=interval_val)
              if success:
-                 target_dataset = result
-        
-        # Always ensure the target dataset is selected in the backend
-        app.select_dataset(target_dataset)
+                 # Result is the path to the new zip file.
+                 # The extract_frames_from_dataset ALREADY updated the config and selected it.
+                 # The 'result' is the zip_path. The function extract_frames_from_dataset 
+                 # also calls select_dataset(temp_name) internally.
+                 # We just need to know the name. 
+                 # Wait, extract_frames_from_dataset selects the dataset by name.
+                 # Let's verify what it returns. It returns (True, zip_path).
+                 # And it selects the dataset named f"{dataset_name}_temp_frames"
+                 final_dataset_name = f"{dataset_name}_temp_frames"
+        else:
+             # Just ensure selected
+             app.select_dataset(final_dataset_name)
         
         # 3. Prepare Updates
-        # Refresh datasets list in case a temp dataset was just created
         all_datasets = app.get_all_datasets()
         choices = [d["name"] for d in all_datasets]
         
-        # Import helpers here to avoid circular dependencies or context issues
         from src.VLMAnnotate.ui_logic import load_selected_img, get_dataset_images_for_gallery
         
         img = load_selected_img(app) 
         gallery_imgs = get_dataset_images_for_gallery(app)
-
+        
         vlm_comps = all_components["vlm_tab"]
         
-        print(f"DEBUG on_annotate_click: target_dataset = {target_dataset}")
-        print(f"DEBUG on_annotate_click: choices = {choices}")
-        print(f"DEBUG on_annotate_click: app.selected_dataset = {app.selected_dataset}")
-        
         return (
-            gr.update(selected="vlm_tab"),   # Use explicit string ID  
-            gr.update(choices=choices, value=target_dataset),
+            gr.update(selected="vlm_tab"),   
+            gr.update(value=final_dataset_name),  # vlm_dataset_info is a Textbox, not Dropdown
             img,    
             gallery_imgs
         )
@@ -286,66 +298,47 @@ def setup_events(app, components, all_components):
             return f"Path: {dataset['path']}"
         return ""
 
-    def update_dataset_dropdown(datasets):
-        """Update dropdown choices"""
-        choices = [d["name"] for d in datasets]
-        # We need to return an update for the dropdown
-        return gr.update(choices=choices, value=None)
 
     # --- Event Handlers ---
-    c["dataset_dropdown"].change(
-        fn=on_dataset_select,
-        inputs=[c["dataset_dropdown"]],
-        outputs=[c["status_output"], c["video_config_group"], c["video_dataframe"]]
+    
+    # 1. Zip Upload Handler
+    c["zip_file_input"].change(
+        fn=on_zip_changed,
+        inputs=[c["zip_file_input"], c["current_dataset_state"]],
+        outputs=[
+             c["click_instruction"],     # Status/Instruction
+             c["video_config_group"],    # Visibility
+             c["video_dataframe"],       # content
+             c["annotate_btn"],          # interactivity
+             c["current_dataset_state"]  # State update
+        ]
     )
 
     vlm_comps = all_components["vlm_tab"]
     
+    # 2. Annotate Click Handler
     c["annotate_btn"].click(
         fn=on_annotate_click,
-        inputs=[c["dataset_dropdown"], c["video_dataframe"], c["interval_slider"]],
+        inputs=[c["current_dataset_state"], c["video_dataframe"], c["interval_slider"]],
         outputs=[
             all_components["tabs"],
-            vlm_comps["vlm_dataset_dropdown"],
+            vlm_comps["vlm_dataset_info"],
             vlm_comps["vlm_image_input"],
             vlm_comps["vlm_gallery"]
         ]
     )
-    
-    datasets_state = all_components["datasets_state"]
 
-    c["delete_btn"].click(
-        fn=lambda dataset_name, datasets: (
-            delete_dataset_handler(dataset_name) if dataset_name 
-            else ("Please select a dataset first", datasets)
-        ),
-        inputs=[c["dataset_dropdown"], datasets_state],
-        outputs=[c["delete_status"], datasets_state]
-    ).then(
-        fn=update_dataset_dropdown,
-        inputs=datasets_state,
-        outputs=[c["dataset_dropdown"]]
-    )
-    
-    c["upload_btn"].click(
-        fn=upload_and_refresh,
-        inputs=c["zip_file_input"],
-        outputs=[c["upload_status"], datasets_state]
-    ).then(
-        fn=update_dataset_dropdown,
-        inputs=datasets_state,
-        outputs=[c["dataset_dropdown"]]
-    )
+    datasets_state = all_components["datasets_state"]
 
     c["checkbox_formatted"].change(
         fn=toggle_button_mode,
         inputs=[c["checkbox_formatted"]],
-        outputs=[c["dataset_format_dropdown"], c["upload_cvat_btn"], c["delete_btn"], c["annotate_btn"],c["dataset_dropdown"],c["status_output"],c["upload_btn"]]
+        outputs=[c["dataset_format_dropdown"], c["upload_cvat_btn"], c["annotate_btn"],c["zip_file_formatted"],c["zip_file_input"], c["click_instruction"], c["video_config_group"]]
     )
     
     c["upload_cvat_btn"].click(
         fn=upload_cvat_handler,
-        inputs=[c["zip_file_input"], c["dataset_format_dropdown"]],
+        inputs=[c["zip_file_formatted"], c["dataset_format_dropdown"]],
         outputs=[c["upload_cvat_status"]]
     )
     

@@ -8,36 +8,14 @@ def create_tab(app):
         
         with gr.Row():
             with gr.Column(scale=1):
-                # --- Dataset Reselection Logic ---
-                gr.Markdown("### 🗂️ Change Dataset")
-                vlm_dataset_dropdown = gr.Dropdown(
-                    choices=[d["name"] for d in app.config.get("datasets", [])],
-                    label="Select Dataset",
-                    value=app.selected_dataset if app.selected_dataset else None,
-                    interactive=True,
-                    allow_custom_value=True
+                # --- Dataset Info ---
+                gr.Markdown("### 🗂️ Current Dataset")
+                vlm_dataset_info = gr.Textbox(
+                    label="Active Dataset",
+                    value=app.selected_dataset if app.selected_dataset else "None",
+                    interactive=False
                 )
-
-                # Video Config Group (initially hidden)
-                with gr.Group(visible=False) as vlm_video_group:
-                    gr.Markdown("#### 🎥 Video Processing Required")
-                    
-                    with gr.Row():
-                        vlm_interval_slider = gr.Slider(
-                            minimum=0.0, maximum=60.0, value=1.0, step=0.1, 
-                            label="Extraction Interval (seconds)"
-                        )
-                        
-                    vlm_video_dataframe = gr.Dataframe(
-                        headers=["Video Name", "Duration"],
-                        datatype=["str", "str"],
-                        col_count=(2, "fixed"),
-                        type="pandas",
-                        interactive=False,
-                        label="Videos to Process"
-                    )
-                    vlm_process_btn = gr.Button("⚙️ Process & Load", variant="secondary", elem_id="btn")
-            
+             
                 with gr.Column(scale=1):
                     gr.Markdown("### 🖼️ Dataset Gallery")
                     vlm_gallery = gr.Gallery(
@@ -119,18 +97,15 @@ def create_tab(app):
                     interactive=False,
                     elem_id="cvat_project_dd"
                 )
-                cvat_btn = gr.Button("Create CVAT Task", visible=False, variant="primary")
+                cvat_btn = gr.Button("Create CVAT Project and Task", visible=False, variant="primary")
                 
                 detection_info = gr.Textbox(label="Detection Details", lines=10, show_copy_button=True, visible=False)
                 raw_output = gr.Textbox(label="Raw Results", lines=5, show_copy_button=True, visible=False)
 
     return {
         "tab": tab,
-        "vlm_dataset_dropdown": vlm_dataset_dropdown,
-        "vlm_video_group": vlm_video_group,
-        "vlm_interval_slider": vlm_interval_slider,
-        "vlm_video_dataframe": vlm_video_dataframe,
-        "vlm_process_btn": vlm_process_btn,
+        "vlm_dataset_info": vlm_dataset_info,
+
         "vlm_gallery": vlm_gallery,
         "vlm_image_input": vlm_image_input,
         "vlm_text_input": vlm_text_input,
@@ -212,26 +187,6 @@ def setup_events(app, components, all_components):
         inputs=[c["vlm_text_input"], c["vlm_confidence_slider"], c["inference_format"]],
         outputs=[c["prompt_output"]]
     )
-    
-    c["vlm_dataset_dropdown"].change(
-        fn=on_vlm_dataset_select,
-        inputs=[c["vlm_dataset_dropdown"]],
-        outputs=[c["vlm_video_group"], c["vlm_video_dataframe"]]
-    ).then(
-        fn=lambda _: load_selected_img(app), outputs=[c["vlm_image_input"]]
-    ).then(
-        fn=lambda _: get_dataset_images_for_gallery(app), outputs=[c["vlm_gallery"]]
-    )
-    
-    c["vlm_process_btn"].click(
-        fn=on_vlm_process_click,
-        inputs=[c["vlm_dataset_dropdown"], c["vlm_video_dataframe"], c["vlm_interval_slider"]],
-        outputs=[c["vlm_video_group"], c["vlm_dataset_dropdown"]]
-    ).then(
-        fn=lambda _: load_selected_img(app), outputs=[c["vlm_image_input"]]
-    ).then(
-        fn=lambda _: get_dataset_images_for_gallery(app), outputs=[c["vlm_gallery"]]
-    )
 
     c["clear_btn"].click(
         lambda: [None, "", 0.15, None, "", ""],
@@ -262,14 +217,12 @@ def setup_events(app, components, all_components):
         outputs=[c["vlm_output_image"], c["detection_info"], c["raw_output"]]
     )
     
+    # Refresh image and gallery when tab is selected (for cases where user navigates directly to VLM tab)
     c["tab"].select(
-        fn=refresh_vlm_dropdown, 
-        outputs=[c["vlm_dataset_dropdown"]]
-    ).then(
-        fn=lambda _: load_selected_img(app), 
+        fn=lambda: load_selected_img(app), 
         outputs=[c["vlm_image_input"]]
     ).then(
-        fn=lambda _: get_dataset_images_for_gallery(app), 
+        fn=lambda: get_dataset_images_for_gallery(app), 
         outputs=[c["vlm_gallery"]]
     )
 

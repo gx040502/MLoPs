@@ -1,5 +1,5 @@
 import gradio as gr
-from src.VLMAnnotate.ui_logic import refresh_all_components, cleanup_and_refresh_ui
+from src.VLMAnnotate.ui_logic import refresh_all_components
 from src.VLMAnnotate.tabs import upload_tab, vlm_tab, train_tab, predict_tab, pretrained_models_tab, about_tab
 
 def load_dataset_interface(app_interface, app):
@@ -84,52 +84,12 @@ def load_dataset_interface(app_interface, app):
     pretrained_models_tab.setup_events(app, pretrained_comps, all_components)
     about_tab.setup_events(app, about_comps, all_components)
     
-    # --- Global Tab Event Handlers ---
-    # Refresh all components when switching tabs
-    # We pass necessary components to cleanup_and_refresh_ui via lambda or wrapper
-    
-    def on_tab_change(cvat_projects_val):
-        return cleanup_and_refresh_ui(app, cvat_projects_val)
-
-    common_outputs = [
-        upload_comps["dataset_dropdown"], 
-        vlm_comps["vlm_dataset_dropdown"], 
-        train_comps["formatted_dataset_dropdown_train"], 
-        train_comps["cvat_tasks_dropdown"]
-    ]
-
-    upload_comps["tab"].select(
-        fn=on_tab_change,
-        inputs=[train_comps["cvat_projects_dropdown"]], 
-        outputs=common_outputs
-    )
-    # VLM tab select event removed - it was overriding the dataset selection from "Annotate" button
-    # vlm_comps["tab"].select(
-    #      fn=on_tab_change,
-    #     inputs=[train_comps["cvat_projects_dropdown"]], 
-    #     outputs=common_outputs
-    # )
-    train_comps["tab"].select(
-        fn=on_tab_change,
-        inputs=[train_comps["cvat_projects_dropdown"]], 
-        outputs=common_outputs
-    )
-    predict_comps["tab"].select(
-        fn=on_tab_change,
-        inputs=[train_comps["cvat_projects_dropdown"]], 
-        outputs=common_outputs
-    )
-    about_comps["tab"].select(
-        fn=on_tab_change,
-        inputs=[train_comps["cvat_projects_dropdown"]], 
-        outputs=common_outputs
-    )
     
     # --- App Initialization ---
     app_interface.load(
         fn=lambda x: refresh_all_components(app, x),
         inputs=[train_comps["cvat_projects_dropdown"]],
-        outputs=[datasets_state, upload_comps["dataset_dropdown"], upload_comps["status_output"], train_comps["cvat_tasks_dropdown"]]
+        outputs=[datasets_state]
     )
 
 if __name__ == "__main__":

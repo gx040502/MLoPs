@@ -9,10 +9,6 @@
             "path": "./.gradio/screenshot_app"
         },
         {
-            "name": "globe",
-            "path": "./.gradio/globe"
-        },
-        {
             "name": "DEMO",
             "path": "./.gradio/DEMO"
         },
@@ -31,9 +27,42 @@
         {
             "name": "ALL_ANIMALS",
             "path": "./.gradio/ALL_ANIMALS"
+        },
+        {
+            "name": "20251218-copy",
+            "path": "./.gradio/20251218-copy"
+        },
+        {
+            "name": "20251218-copy",
+            "path": "./.gradio/20251218-copy"
+        },
+        {
+            "name": "20251218-copy",
+            "path": "./.gradio/20251218-copy"
+        },
+        {
+            "name": "20251218-copy",
+            "path": "./.gradio/20251218-copy"
+        },
+        {
+            "name": "20251218-copy_temp_frames",
+            "path": "./.gradio/20251218-copy_temp_frames"
+        },
+        {
+            "name": "ALL",
+            "path": "./.gradio/ALL"
+        },
+        {
+            "name": "ALL",
+            "path": "./.gradio/ALL"
         }
     ],
-    "formatted_datasets": [],
+    "formatted_datasets": [
+        {
+            "name": "Project_119",
+            "path": ".gradio/formatted_project_119.zip"
+        }
+    ],
     "own_models": [
         {
             "name": "CARPLATE2",

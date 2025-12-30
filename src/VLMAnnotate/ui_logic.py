@@ -19,49 +19,7 @@ def refresh_all_components(app, cvat_projects_dropdown_value):
     
     dropdown_update = gr.update(choices=choices, value=first_dataset)
     
-    # Refresh CVAT tasks as well and select the first one
-    cvat_tasks = app.get_cvat_tasks(cvat_projects_dropdown_value)
-    # CVAT tasks are tuples: (label, id). Use the ID as the value.
-    cvat_first_task = cvat_tasks[0][1] if cvat_tasks else None  # Get ID from first tuple
-    cvat_tasks_update = gr.update(choices=cvat_tasks, value=cvat_first_task)
-    
-    return updated_datasets, dropdown_update, "Datasets & Tasks refreshed!", cvat_tasks_update
-
-def cleanup_and_refresh_ui(app, cvat_projects_dropdown_value):
-    """Cleanup temp datasets and refresh all dropdowns"""
-    # 1. Cleanup backend
-    app.cleanup_temp_datasets()
-    
-    # 2. Get fresh list for regular datasets
-    all_datasets = app.get_all_datasets()
-    choices = [d["name"] for d in all_datasets]
-    
-    # 3. Get fresh list for formatted datasets (own_datasets)
-    own_datasets = app.get_all_own_datasets()
-    formatted_choices = [d["name"] for d in own_datasets]
-    
-    # 4. Get fresh list for CVAT tasks (select latest/first)
-    cvat_tasks = app.get_cvat_tasks(cvat_projects_dropdown_value)
-    # CVAT tasks are tuples: (label, id). Use the ID as the value.
-    cvat_task_value = cvat_tasks[0][1] if cvat_tasks else None  # Get ID from first tuple
-    
-    # 5. Select the first available option if choices exist, else None
-    new_val = choices[0] if choices else None
-    formatted_new_val = formatted_choices[0] if formatted_choices else None
-    
-    # 6. Get path for formatted dataset
-    formatted_path = ""
-    if formatted_new_val:
-        dataset = next((d for d in own_datasets if d["name"] == formatted_new_val), None)
-        if dataset:
-            formatted_path = f"Path: {dataset['path']}"
-    
-    return (
-        gr.update(choices=choices, value=new_val),  # For dataset_dropdown (Home)
-        gr.update(choices=choices, value=new_val),  # For vlm_dataset_dropdown (VLM)
-        gr.update(choices=formatted_choices, value=formatted_new_val),  # For formatted_dataset_dropdown_train (Train tab)
-        gr.update(choices=cvat_tasks, value=cvat_task_value)  # For cvat_tasks_dropdown (Train tab)
-    )
+    return updated_datasets
 
 def load_selected_img(app): 
     if app.selected_dataset:

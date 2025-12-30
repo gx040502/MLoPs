@@ -415,9 +415,9 @@ class APP():
             self.config["datasets"].append({"name": project_name, "path": output_dir})
             self.save_config()
 
-            return True, f"Successfully unzipped the file to '{output_dir}'.\n\nExtracted files:\n" + "\n".join([f"- {file}" for file in os.listdir(output_dir)])
+            return True, f"Successfully unzipped the file to '{output_dir}'.", project_name
         except Exception as e:
-            return False, f"An error occurred while unzipping the file: {e}"
+            return False, f"An error occurred while unzipping the file: {e}", None
 
     def get_pretrained_models(self, format_name=None):
         """
@@ -1443,10 +1443,23 @@ class APP():
             except Exception as e:
                 print(f"Failed to extract {video_name}: {e}")
 
-        # 4. Register new dataset in config
+        # 4. Zip the new dataset so it can be re-uploaded or used as main source
+        # We need to zip the contents of temp_dir
+        zip_output_path = os.path.join(self.datasets_dir, f"{temp_name}.zip")
+        with zipfile.ZipFile(zip_output_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for root, dirs, files in os.walk(temp_dir):
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    arcname = os.path.relpath(file_path, temp_dir)
+                    zipf.write(file_path, arcname)
+                    
+        # Update config with new temp dataset
+        if "datasets" not in self.config:
+            self.config["datasets"] = []
+            
         # Check if already exists in config, update it
         existing_idx = next((i for i, d in enumerate(self.config["datasets"]) if d["name"] == temp_name), -1)
-        new_entry = {"name": temp_name, "path": temp_dir, "is_temp": True}
+        new_entry = {"name": temp_name, "path": temp_dir}
         
         if existing_idx >= 0:
             self.config["datasets"][existing_idx] = new_entry
@@ -1454,28 +1467,9 @@ class APP():
             self.config["datasets"].append(new_entry)
             
         self.save_config()
-        self.select_dataset(temp_name) # Switch to this dataset
-        
-        return True, temp_name
+        self.select_dataset(temp_name)
 
-    def cleanup_temp_datasets(self):
-        """
-        Removes any datasets with names ending in '_temp_frames'.
-        Used to clean up temporary datasets created for video inference.
-        """
-        temp_suffix = "_temp_frames"
-        datasets_to_remove = [d["name"] for d in self.config.get("datasets", []) if d["name"].endswith(temp_suffix)]
-        
-        removed_count = 0
-        for name in datasets_to_remove:
-            success, msg = self.remove_dataset(name)
-            if success:
-                removed_count += 1
-                # print(f"Cleaned up temp dataset: {name}") # Optional logging
-            else:
-                print(f"Failed to clean up temp dataset {name}: {msg}")
-                
-        return removed_count
+        return True, zip_output_path
 
     def draw_bounding_boxes(self, image, detections, threshold=0.3):
         """
@@ -2372,14 +2366,14 @@ class APP():
             print(f"Detailed Error: {e}")
             return f"❌ Error during formatting: {str(e)}", None
             
-    def _download_and_format_task(self, task_id, output_zip_path, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
+    def _download_and_format_project(self, project_id, output_zip_path, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
         """
-        Helper method to download and format a task to a specific location.
+        Helper method to download and format a project to a specific location.
         Returns (SuccessBool, Message)
         split_ratios: tuple of (train, val, test) percentages. Should sum roughly to 100.
         """
         output_zip_path = Path(output_zip_path)
-        print(f"DEBUG: Internal Processing CVAT Task {task_id} -> {output_zip_path}")
+        print(f"DEBUG: Internal Processing CVAT Project {project_id} -> {output_zip_path}")
         
         url = self.config.get("cvat_url")
         username = self.config.get("cvat_username")
@@ -2387,17 +2381,17 @@ class APP():
         
         # --- PHASE 1: DOWNLOAD ---
         host = url.split('/projects')[0].split('/tasks')[0].split('jobs')[0].rstrip('/')
-        raw_zip_path = Path(self.datasets_dir) / f"cvat_task_{task_id}.zip"
+        raw_zip_path = Path(self.datasets_dir) / f"cvat_project_{project_id}.zip"
         
         try:
-            print(f"Connecting to CVAT to download Task {task_id}...")
+            print(f"Connecting to CVAT to download Project {project_id}...")
             with make_client(host, credentials=(username, password)) as client:
-                task = client.tasks.retrieve(int(task_id))
+                project = client.projects.retrieve(int(project_id))
                 raw_zip_path.parent.mkdir(parents=True, exist_ok=True)
                 if raw_zip_path.exists():
                     raw_zip_path.unlink()
                 
-                task.export_dataset(
+                project.export_dataset(
                     format_name=format_name,
                     filename=str(raw_zip_path),
                     include_images=True
@@ -2406,8 +2400,8 @@ class APP():
             return False, f"Error downloading: {str(e)}"
 
         # --- PHASE 2: FORMAT ---
-        temp_extract_dir = Path(self.datasets_dir) / f"temp_extract_{task_id}_{int(time.time())}"
-        temp_build_dir = Path(self.datasets_dir) / f"temp_build_{task_id}_{int(time.time())}"
+        temp_extract_dir = Path(self.datasets_dir) / f"temp_extract_{project_id}_{int(time.time())}"
+        temp_build_dir = Path(self.datasets_dir) / f"temp_build_{project_id}_{int(time.time())}"
         
         try:
             with zipfile.ZipFile(raw_zip_path, 'r') as zip_ref:
@@ -2574,11 +2568,11 @@ class APP():
             if temp_build_dir.exists(): shutil.rmtree(temp_build_dir, ignore_errors=True)
 
 
-    def process_cvat_task(self, task_id, custom_name=None, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
+    def process_cvat_project(self, project_id, custom_name=None, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
         """
-        Public wrapper to download/format and register the dataset.
+        Public wrapper to download/format project and register the dataset.
         """
-        if not task_id: return "❌ Error: No task selected.", None
+        if not project_id: return "❌ Error: No project selected.", None
 
         # Determine output filename
         if custom_name and custom_name.strip():
@@ -2587,10 +2581,10 @@ class APP():
             formatted_zip_path = Path(self.datasets_dir) / safe_name
             dataset_entry_name = safe_name.replace('.zip', '')
         else:
-            formatted_zip_path = Path(self.datasets_dir) / f"formatted_task_{task_id}.zip"
-            dataset_entry_name = f"Task_{task_id}"
+            formatted_zip_path = Path(self.datasets_dir) / f"formatted_project_{project_id}.zip"
+            dataset_entry_name = f"Project_{project_id}"
             
-        success, msg = self._download_and_format_task(task_id, formatted_zip_path, split_ratios, format_name=format_name)
+        success, msg = self._download_and_format_project(project_id, formatted_zip_path, split_ratios, format_name=format_name)
         
         if not success:
             return f"❌ {msg}", None
