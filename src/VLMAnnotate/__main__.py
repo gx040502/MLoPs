@@ -34,7 +34,7 @@ def main():
     
     app_interface.launch(
         debug=True,
-        share=False,
+        share=True,
         server_name="0.0.0.0",  # Allow external connections
         server_port=6605, #Testing Port
         allowed_paths=[gradio_dir]

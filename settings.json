@@ -1,7 +1,7 @@
 {
     "cvat_url": "http://100.110.21.83:8080",
-    "cvat_username": "gyapxun",
-    "cvat_password": "mmcgtm2014",
+    "cvat_username": "",
+    "cvat_password": "",
     "datasets_dir": "./.gradio",
     "datasets": [
         {
@@ -19,20 +19,48 @@
         {
             "name": "DEMO - Copy",
             "path": "./.gradio/DEMO - Copy"
+        },
+        {
+            "name": "animal",
+            "path": "./.gradio/animal"
+        },
+        {
+            "name": "one_animal",
+            "path": "./.gradio/one_animal"
+        },
+        {
+            "name": "ALL",
+            "path": "./.gradio/ALL"
+        },
+        {
+            "name": "ALL_ANIMALS",
+            "path": "./.gradio/ALL_ANIMALS"
         }
     ],
     "formatted_datasets": [
         {
-            "name": "Task_716",
-            "path": ".gradio/formatted_task_716.zip"
+            "name": "Task_763",
+            "path": ".gradio/formatted_task_763.zip"
+        }
+    ],
+    "own_models": [
+        {
+            "name": "CARPLATE2",
+            "path": ".gradio/own_models/CARPLATE2.pt"
         },
         {
-            "name": "Task_720",
-            "path": ".gradio/formatted_task_720.zip"
+            "name": "LENTERA",
+            "path": ".gradio/own_models/LENTERA.pt"
+        }
+    ],
+    "own_datasets": [
+        {
+            "name": "animal_data - Copy",
+            "path": ".gradio/own_formatted/animal_data - Copy.zip"
         },
         {
-            "name": "Task_721",
-            "path": ".gradio/formatted_task_721.zip"
+            "name": "animal_data - Copy - Copy",
+            "path": ".gradio/own_formatted/animal_data - Copy - Copy.zip"
         }
     ]
 }

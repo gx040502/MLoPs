@@ -24,6 +24,7 @@ from .utils import COCODatasetBuilder, GroundingDINODetector
 from ultralytics import YOLO, SAM
 
 class APP():
+
     def __init__(self, vlm_model: GroundingDINODetector=None):
         self.json_path = 'settings.json'
         try:
@@ -46,6 +47,7 @@ class APP():
             self.train_root_dir = Path("/home/intern/Gitlab/pipeline/1.Train")
 
     def select_dataset(self, name):
+        
         success, dataset = self.get_dataset_by_name(name)
         if success:
             self.selected_dataset = name
@@ -1107,6 +1109,30 @@ class APP():
             )
             
             if success:
+                try:
+                    # Check if file is in the root .gradio dir (not own_formatted)
+                    # and starts with formatted_task_ or manually matches
+                    root_dir = Path(self.datasets_dir).resolve()
+                    parent_dir = zip_path.parent.resolve()
+                    
+                    print(f"DEBUG Cleanup: ZIP={zip_path}, Parent={parent_dir}, Root={root_dir}")
+                    print(f"DEBUG Cleanup: Exists={zip_path.exists()}, IsInRoot={parent_dir == root_dir}")
+
+                    is_in_root = parent_dir == root_dir
+                    if is_in_root and zip_path.exists():
+                        print(f"🧹 Cleaning up temporary zip: {zip_path}")
+                        zip_path.unlink()
+
+                        # Remove from config
+                        formatted_datasets = self.config.get("formatted_datasets", [])
+                        formatted_datasets = [d for d in formatted_datasets if d["path"] != formatted_path]
+                        self.config["formatted_datasets"] = formatted_datasets
+                        self.save_config()
+
+
+                except Exception as cleanup_err:
+                    print(f"⚠️ Cleanup warning: {cleanup_err}")
+
                 return f"✅ {msg}"
             else:
                 return f"❌ {msg}"
@@ -1121,6 +1147,10 @@ class APP():
     def get_all_formatted_datasets(self, name=None):
         # A list of datasets from the configuration, each element is a dict with 'name' and 'path'
         return self.config.get("formatted_datasets", [])
+
+    def get_all_own_datasets(self, name=None):
+        # A list of user-uploaded formatted datasets from the configuration
+        return self.config.get("own_datasets", [])
 
     def select_formatted_dataset_path(self, name):
         """
@@ -2292,39 +2322,111 @@ class APP():
              
         return f"✅ Downloaded & Formatted Successfully!\\nPath: {formatted_zip_path}", str(formatted_zip_path)
 
-    def process_uploaded_dataset(self, uploaded_file_path):
+    def save_formatted_dataset(self, zip_file_path):
         """
-        Copy user-uploaded dataset to .gradio directory.
+        Save uploaded formatted dataset to .gradio/own_formatted/ and update settings.json
         
         Args:
-            uploaded_file_path: Path to uploaded file from gr.File
+            zip_file_path: Path to uploaded formatted dataset zip
             
         Returns:
-            tuple: (success: bool, final_path: str, message: str)
+            tuple: (success: bool, message: str, dataset_name: str)
         """
-        if not uploaded_file_path:
-            return False, None, "❌ No file uploaded"
+        if not zip_file_path:
+            return False, "❌ No file uploaded", None
         
         try:
-            uploaded_path = Path(uploaded_file_path)
+            uploaded_path = Path(zip_file_path)
             if not uploaded_path.exists():
-                return False, None, f"❌ File not found: {uploaded_file_path}"
+                return False, f"❌ File not found: {zip_file_path}", None
             
-            # Extract filename and create destination path
-            original_filename = uploaded_path.name
-            dest_filename = f"formatted_{original_filename}"
-            dest_path = Path(self.datasets_dir) / dest_filename
+            # Create own_formatted directory
+            own_formatted_dir = Path(self.datasets_dir) / "own_formatted"
+            own_formatted_dir.mkdir(parents=True, exist_ok=True)
             
-            # Copy file to .gradio directory
+            # Use original filename (without .zip for dataset name)
+            dataset_name = uploaded_path.stem  # Remove .zip extension
+            dest_path = own_formatted_dir / uploaded_path.name
+            
+            # Copy file to destination
             shutil.copy2(uploaded_path, dest_path)
             
-            print(f"Copied uploaded dataset: {uploaded_path} → {dest_path}")
+            print(f"📦 Saved formatted dataset: {uploaded_path.name} → {dest_path}")
             
-            return True, str(dest_path), f"✅ Dataset uploaded successfully: {dest_filename}"
+            # Update settings.json - save to own_datasets (user-uploaded)
+            if "own_datasets" not in self.config:
+                self.config["own_datasets"] = []
+            
+            # Check if dataset already exists
+            existing_idx = next((i for i, d in enumerate(self.config["own_datasets"]) 
+                               if d.get("name") == dataset_name), -1)
+            
+            dataset_entry = {
+                "name": dataset_name,
+                "path": str(dest_path)
+            }
+            
+            if existing_idx >= 0:
+                # Update existing path
+                self.config["own_datasets"][existing_idx] = dataset_entry
+                message = f"✅ Formatted dataset updated: {dataset_name}"
+            else:
+                # Add new entry
+                self.config["own_datasets"].append(dataset_entry)
+                message = f"✅ Formatted dataset saved: {dataset_name}"
+            
+            self.save_config()
+            
+            return True, message, dataset_name
             
         except Exception as e:
-            print(f"Error processing uploaded dataset: {e}")
-            return False, None, f"❌ Error: {str(e)}"
+            print(f"Error saving formatted dataset: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, f"❌ Error: {str(e)}", None
+    
+    def delete_formatted_dataset(self, dataset_name):
+        """
+        Delete formatted dataset from filesystem and settings.json
+        
+        Args:
+            dataset_name: Name of formatted dataset to delete
+            
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+        if not dataset_name:
+            return False, "❌ Please select a dataset to delete"
+        
+        try:
+            own_datasets = self.config.get("own_datasets", [])
+            dataset_entry = next((d for d in own_datasets if d.get("name") == dataset_name), None)
+            
+            if not dataset_entry:
+                return False, f"❌ Dataset '{dataset_name}' not found in settings"
+            
+            # Delete physical file
+            dataset_path = Path(dataset_entry.get("path", ""))
+            if dataset_path.exists():
+                os.remove(dataset_path)
+                print(f"🗑️ Deleted file: {dataset_path}")
+            else:
+                print(f"⚠️ File not found (already deleted?): {dataset_path}")
+            
+            # Remove from config
+            self.config["own_datasets"] = [
+                d for d in own_datasets if d.get("name") != dataset_name
+            ]
+            self.save_config()
+            
+            return True, f"✅ Formatted dataset '{dataset_name}' deleted successfully"
+            
+        except Exception as e:
+            print(f"Error deleting formatted dataset: {e}")
+            import traceback
+            traceback.print_exc()
+            return False, f"❌ Error: {str(e)}"
+
 
     def cleanup_preview(self):
         """Clean up all temporary preview files"""

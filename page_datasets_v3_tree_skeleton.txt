@@ -1,0 +1,269 @@
+page_datasets_v3.py
+├── Imports (lines 1-8)
+├── load_dataset_interface() function definition (line 9)
+│
+├── ═══════════════════════════════════════════════════════════
+├── SECTION 1: ALL FUNCTION DEFINITIONS (lines 10-618)
+├── ═══════════════════════════════════════════════════════════
+│
+│   ├── CSS Styling (lines 11-47)
+│   │   └── gr.HTML() - Custom CSS for buttons and sliders
+│   │
+│   ├── Global Functions (lines 49-116)
+│   │   ├── refresh_datasets_state()
+│   │   ├── refresh_all_components()
+│   │   └── cleanup_and_refresh_ui()
+│   │
+│   ├── Upload & Select Tab Functions (lines 118-249)
+│   │   ├── upload_and_refresh()
+│   │   ├── delete_dataset_handler()
+│   │   ├── on_dataset_select()
+│   │   └── on_annotate_click()
+│   │
+│   ├── Formatted Dataset Functions (lines 251-317)
+│   │   ├── upload_formatted_and_refresh()
+│   │   ├── delete_formatted_and_refresh()
+│   │   ├── on_formatted_dataset_select()
+│   │   └── navigate_to_train_with_dataset()
+│   │
+│   ├── VLM Annotation Tab Functions (lines 319-394)
+│   │   ├── load_selected_img()
+│   │   ├── refresh_vlm_dropdown()
+│   │   ├── get_dataset_images_for_gallery()
+│   │   ├── on_vlm_dataset_select()
+│   │   ├── on_vlm_process_click()
+│   │   └── on_gallery_select()
+│   │
+│   ├── Train Model Tab Functions (lines 396-543)
+│   │   ├── on_format_change()
+│   │   ├── toggle_aug_settings()
+│   │   ├── trigger_training()
+│   │   ├── check_training_status()
+│   │   ├── toggle_training_mode()
+│   │   ├── on_train_config_toggle()
+│   │   ├── trigger_formatted_training()
+│   │   ├── load_sample_image()
+│   │   ├── update_aug_preview()
+│   │   └── on_tab_select()
+│   │
+│   ├── Predict Tab Functions (lines 545-581)
+│   │   ├── on_predict_tab_select()
+│   │   ├── on_project_change()
+│   │   ├── on_model_change()
+│   │   ├── on_predict()
+│   │   └── toggle_plots_visibility()
+│   │
+│   ├── Pre-Trained Models Tab Functions (lines 583-632)
+│   │   ├── refresh_own_model_dropdown()
+│   │   ├── handle_model_upload()
+│   │   ├── handle_model_delete()
+│   │   ├── display_model_details()
+│   │   └── predict_own_model()
+│   │
+│   └── About Tab Functions (lines 634-638)
+│       └── update_dataset_dropdown_and_display()
+│
+├── ═══════════════════════════════════════════════════════════
+├── SECTION 2: ALL UI COMPONENTS (lines 640-1227)
+├── ═══════════════════════════════════════════════════════════
+│
+│   ├── Global State & Header (lines 640-631)
+│   │   ├── datasets_state = gr.State()
+│   │   └── gr.Markdown() - Page header
+│   │
+│   └── with gr.Tabs() as tabs:
+│
+│       ├── 📤 Upload and Select Tab (lines 633-795)
+│       │   ├── Upload Raw Dataset Section
+│       │   │   ├── zip_file_input
+│       │   │   ├── upload_btn
+│       │   │   ├── upload_status
+│       │   │   ├── dataset_dropdown
+│       │   │   ├── status_output
+│       │   │   ├── delete_btn
+│       │   │   ├── annotate_btn
+│       │   │   └── delete_status
+│       │   │
+│       │   ├── Video Frame Extraction Configuration
+│       │   │   ├── video_config_group (hidden)
+│       │   │   ├── interval_slider
+│       │   │   └── video_dataframe
+│       │   │
+│       │   └── Upload Own Formatted Dataset Section
+│       │       ├── formatted_dataset_file
+│       │       ├── upload_formatted_btn
+│       │       ├── upload_formatted_status
+│       │       ├── formatted_dataset_dropdown
+│       │       ├── formatted_dataset_path_info
+│       │       ├── delete_formatted_btn
+│       │       └── train_formatted_btn
+│       │
+│       ├── 📝 VLM Annotation Tab (lines 797-917)
+│       │   ├── vlm_dataset_dropdown
+│       │   ├── vlm_video_group (hidden)
+│       │   │   ├── vlm_interval_slider
+│       │   │   ├── vlm_video_dataframe
+│       │   │   └── vlm_process_btn
+│       │   ├── vlm_gallery
+│       │   ├── vlm_image_input
+│       │   ├── vlm_text_input
+│       │   ├── inference_format
+│       │   ├── vlm_confidence_slider
+│       │   ├── detect_btn
+│       │   ├── clear_btn
+│       │   ├── prompt_output
+│       │   ├── vlm_output_image
+│       │   ├── inference_btn
+│       │   ├── inference_output
+│       │   ├── cvat_project_dropdown (hidden)
+│       │   ├── cvat_btn (hidden)
+│       │   ├── detection_info
+│       │   └── raw_output
+│       │
+│       ├── 🧠 Train Model Tab (lines 919-1105)
+│       │   ├── cvat_projects_dropdown (hidden)
+│       │   ├── cvat_tasks_dropdown
+│       │   ├── format_dropdown
+│       │   ├── model_dropdown
+│       │   ├── train_config_checkbox
+│       │   │
+│       │   ├── train_config_group (hidden)
+│       │   │   ├── experiments_slider (Epochs)
+│       │   │   ├── imgsz_slider (Image Size)
+│       │   │   ├── train_ratio, val_ratio, test_ratio
+│       │   │   ├── manual_aug_checkbox
+│       │   │   │
+│       │   │   └── aug_settings_group (hidden)
+│       │   │       ├── aug_preview_img
+│       │   │       ├── load_sample_btn
+│       │   │       ├── Color Augmentation Sliders
+│       │   │       │   ├── hsv_h, hsv_s, hsv_v
+│       │   │       │   └── bgr
+│       │   │       ├── Geometric Transform Sliders
+│       │   │       │   ├── degrees, translate
+│       │   │       │   ├── scale, shear
+│       │   │       │   ├── perspective, flipud
+│       │   │       │   └── fliplr
+│       │   │       ├── Advanced Mixing Sliders
+│       │   │       │   ├── mosaic, mixup
+│       │   │       │   └── cutmix, copy_paste
+│       │   │       └── erasing
+│       │   │
+│       │   ├── use_formatted_checkbox
+│       │   ├── formatted_dataset_group (hidden)
+│       │   │   └── formatted_dataset_dropdown_train
+│       │   ├── train_btn
+│       │   ├── train_own_btn (hidden)
+│       │   ├── dataset_log
+│       │   ├── training_log
+│       │   ├── eta_output (hidden)
+│       │   ├── current_training_project_name (State)
+│       │   └── filename_input (hidden)
+│       │
+│       ├── 🎱 Predict Model Tab (lines 1107-1195)
+│       │   ├── train_project_dd
+│       │   ├── train_model_dd
+│       │   ├── model_details
+│       │   ├── show_plots_checkbox
+│       │   ├── plots_group (hidden)
+│       │   │   └── model_plots_gallery
+│       │   ├── test_gallery
+│       │   ├── input_img
+│       │   ├── conf_slider
+│       │   ├── iou_slider
+│       │   ├── predict_btn
+│       │   ├── output_img
+│       │   └── result_details
+│       │
+│       ├── 🤖 Pre-Trained Models Tab (lines 1197-1255)
+│       │   ├── Add Custom Model Accordion
+│       │   │   ├── model_name_input
+│       │   │   ├── model_uploader
+│       │   │   ├── upload_model_btn
+│       │   │   └── upload_model_status
+│       │   ├── own_model_dropdown
+│       │   ├── own_delete_btn
+│       │   ├── own_model_details
+│       │   ├── Prediction Interface
+│       │   │   ├── own_input_img
+│       │   │   ├── own_conf_slider
+│       │   │   ├── own_iou_slider
+│       │   │   └── own_predict_btn
+│       │   ├── own_output_img
+│       │   └── own_result_details
+│       │
+│       └── ℹ️ About Tab (lines 1257-1277)
+│           └── gr.Markdown() - Feature documentation
+│
+├── ═══════════════════════════════════════════════════════════
+├── SECTION 3: ALL EVENT HANDLERS (lines 1229-1542)
+├── ═══════════════════════════════════════════════════════════
+│
+│   ├── 📤 Upload & Select Tab Event Handlers (lines 1232-1327)
+│   │   ├── dataset_dropdown.change()
+│   │   ├── annotate_btn.click()
+│   │   ├── delete_btn.click().then()
+│   │   ├── upload_btn.click().then()
+│   │   ├── upload_formatted_btn.click()
+│   │   ├── delete_formatted_btn.click()
+│   │   ├── formatted_dataset_dropdown.change()
+│   │   └── train_formatted_btn.click()
+│   │
+│   ├── 📝 VLM Annotation Tab Event Handlers (lines 1329-1397)
+│   │   ├── detect_btn.click().then()
+│   │   ├── vlm_dataset_dropdown.change().then().then()
+│   │   ├── vlm_process_btn.click().then().then()
+│   │   ├── clear_btn.click()
+│   │   ├── inference_btn.click().then()
+│   │   ├── cvat_btn.click().then()
+│   │   ├── vlm_text_input.submit()
+│   │   ├── vlm_tab.select().then().then()
+│   │   └── vlm_gallery.select()
+│   │
+│   ├── 🧠 Train Model Tab Event Handlers (lines 1399-1469)
+│   │   ├── format_dropdown.change()
+│   │   ├── manual_aug_checkbox.change()
+│   │   ├── eta_timer.tick()
+│   │   ├── train_btn.click()
+│   │   ├── use_formatted_checkbox.change()
+│   │   ├── train_config_checkbox.change()
+│   │   ├── train_own_btn.click()
+│   │   ├── load_sample_btn.click()
+│   │   └── for slider in aug_inputs[1:]:
+│   │       └── slider.change()
+│   │
+│   ├── 🎱 Predict Tab Event Handlers (lines 1471-1501)
+│   │   ├── predict_tab.select()
+│   │   ├── train_project_dd.change()
+│   │   ├── train_model_dd.change()
+│   │   ├── predict_btn.click()
+│   │   ├── test_gallery.select()
+│   │   └── show_plots_checkbox.change()
+│   │
+│   ├── 🤖 Pre-Trained Models Tab Event Handlers (lines 1503-1525)
+│   │   ├── pre_trained_tab.select()
+│   │   ├── upload_model_btn.click()
+│   │   ├── own_model_dropdown.change()
+│   │   ├── own_delete_btn.click()
+│   │   └── own_predict_btn.click()
+│   │
+│   ├── 🌐 Global Tab Event Handlers (lines 1527-1537)
+│   │   ├── common_inputs = []
+│   │   ├── common_outputs = [...]
+│   │   ├── upload_select_tab.select()
+│   │   ├── train_tab.select()
+│   │   ├── predict_tab.select()
+│   │   └── about_tab.select()
+│   │
+│   └── 🚀 App Initialization (lines 1539-1542)
+│       └── app_interface.load()
+│
+└── ═══════════════════════════════════════════════════════════
+└── Main Execution Block (lines 1544-1555)
+    └── if __name__ == "__main__":
+        ├── from app import APP
+        ├── app = APP()
+        ├── with gr.Blocks() as app_interface:
+        │   ├── load_dataset_interface()
+        │   └── gr.Button("Go to VLM")
+        └── app_interface.launch()
