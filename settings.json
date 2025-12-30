@@ -25,10 +25,6 @@
             "path": "./.gradio/animal"
         },
         {
-            "name": "one_animal",
-            "path": "./.gradio/one_animal"
-        },
-        {
             "name": "ALL",
             "path": "./.gradio/ALL"
         },
@@ -37,12 +33,7 @@
             "path": "./.gradio/ALL_ANIMALS"
         }
     ],
-    "formatted_datasets": [
-        {
-            "name": "Task_763",
-            "path": ".gradio/formatted_task_763.zip"
-        }
-    ],
+    "formatted_datasets": [],
     "own_models": [
         {
             "name": "CARPLATE2",
@@ -57,10 +48,6 @@
         {
             "name": "animal_data - Copy",
             "path": ".gradio/own_formatted/animal_data - Copy.zip"
-        },
-        {
-            "name": "animal_data - Copy - Copy",
-            "path": ".gradio/own_formatted/animal_data - Copy - Copy.zip"
         }
     ]
 }
