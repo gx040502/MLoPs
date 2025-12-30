@@ -94,9 +94,7 @@ def load_dataset_interface(app_interface, app):
     common_outputs = [
         upload_comps["dataset_dropdown"], 
         vlm_comps["vlm_dataset_dropdown"], 
-        upload_comps["formatted_dataset_dropdown"], 
         train_comps["formatted_dataset_dropdown_train"], 
-        upload_comps["formatted_dataset_path_info"], 
         train_comps["cvat_tasks_dropdown"]
     ]
 
@@ -105,11 +103,12 @@ def load_dataset_interface(app_interface, app):
         inputs=[train_comps["cvat_projects_dropdown"]], 
         outputs=common_outputs
     )
-    vlm_comps["tab"].select( # VLM Tab shouldn't necessarily refresh EVERYTHING, but maybe? keeping consistent for now
-         fn=on_tab_change,
-        inputs=[train_comps["cvat_projects_dropdown"]], 
-        outputs=common_outputs
-    )
+    # VLM tab select event removed - it was overriding the dataset selection from "Annotate" button
+    # vlm_comps["tab"].select(
+    #      fn=on_tab_change,
+    #     inputs=[train_comps["cvat_projects_dropdown"]], 
+    #     outputs=common_outputs
+    # )
     train_comps["tab"].select(
         fn=on_tab_change,
         inputs=[train_comps["cvat_projects_dropdown"]], 

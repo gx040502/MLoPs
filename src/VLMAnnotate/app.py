@@ -1797,12 +1797,29 @@ class APP():
 
         try:
             with client:
-                # projects_api.list() returns (data, response_headers) tuple usually
-                # data is a list of ProjectRead objects
-                projects, _ = client.projects_api.list()
+                # First, get the organization ID for "PixeVision"
+                org_id = None
+                try:
+                    orgs, _ = client.organizations_api.list()
+                    for org in orgs.results:
+                        if org.slug == "PixeVision" or org.name == "PixeVision":
+                            org_id = org.id
+                            print(f"Found organization 'PixeVision' with ID: {org_id}")
+                            break
+                    
+                    if not org_id:
+                        print("⚠️ Warning: Organization 'PixeVision' not found. Showing all projects.")
+                except Exception as e:
+                    print(f"⚠️ Warning: Could not fetch organizations: {e}")
+                
+                # Fetch projects, filtered by organization if found
+                if org_id:
+                    projects, _ = client.projects_api.list(org_id=org_id)
+                else:
+                    projects, _ = client.projects_api.list()
                 
                 # Format as [(Name (ID: X), X)] for Gradio dropdown
-                return [(f"{p.name} (ID: {p.id})", p.id) for p in projects.results if p.id==107]
+                return [(f"{p.name} (ID: {p.id})", p.id) for p in projects.results]
         except Exception as e:
             print(f"Error fetching projects: {e}")
             return []
@@ -1818,7 +1835,11 @@ class APP():
             with client:
                 # tasks_api.list() returns (data, response_headers) tuple usually
                 # data is a list of TaskRead objects
-                tasks, _ = client.tasks_api.list(project_id=project_id)
+                list_kwargs = {}
+                if project_id is not None:
+                     list_kwargs['project_id'] = int(project_id)
+                
+                tasks, _ = client.tasks_api.list(**list_kwargs)
                 
                 # Format as [(Name (ID: X), X)] for Gradio dropdown
                 return [(f"{t.name} (ID: {t.id})", t.id) for t in tasks.results]
@@ -2080,13 +2101,277 @@ class APP():
         except Exception as e:
             return f"❌ Error creating CVAT task: {str(e)}"
     
+    def create_cvat_project_with_tasks(self, project_name=None):
+        """
+        Create a CVAT project and split dataset into Train/Val/Test tasks (7:1:2 ratio).
+        """
+        url = self.config.get("cvat_url")
+        username = self.config.get("cvat_username")
+        password = self.config.get("cvat_password")
+        org_id=1
+        
+        if not all([url, username, password]):
+            return "❌ Error: Missing CVAT credentials."
+            
+        # Sanitize URL
+        url = url.split('/projects')[0].split('/tasks')[0].split('jobs')[0].rstrip('/')
+
+        dataset_name = self.selected_dataset
+        if not dataset_name:
+            return "❌ Error: No dataset selected."
+
+        # Locate the inference output directory
+        output_dir = Path(self.datasets_dir).parent / '.output' / f"{dataset_name}_coco"
+        images_dir = output_dir / "images" / "Train"
+        annotations_file = output_dir / "annotations" / "instances_Train.json"
+
+        if not images_dir.exists() or not annotations_file.exists():
+            return f"❌ Error: Inference output not found at {output_dir}. Please run 'Inference Dataset' first."
+
+        try:
+            # Use High-Level 'make_client'
+            with make_client(url, credentials=(username, password)) as client:
+                
+                # 1. Load COCO data
+                print("📖 Loading COCO annotations...")
+                with open(annotations_file, 'r') as f:
+                    coco_data = json.load(f)
+                
+                images = coco_data.get('images', [])
+                annotations = coco_data.get('annotations', [])
+                categories = coco_data.get('categories', [])
+                inf_format = coco_data.get('info', {}).get('inference_format', 'Detection')
+                
+                # 2. Split dataset (7:1:2 ratio)
+                print(f"🔀 Splitting {len(images)} images into Train/Val/Test (7:1:2)...")
+                import random
+                random.seed(42)
+                shuffled_images = random.sample(images, len(images))
+                
+                n_total = len(shuffled_images)
+                n_train = int(n_total * 0.7)
+                n_val = int(n_total * 0.1)
+                
+                train_images = shuffled_images[:n_train]
+                val_images = shuffled_images[n_train:n_train+n_val]
+                test_images = shuffled_images[n_train+n_val:]
+                
+                print(f"  📊 Train: {len(train_images)}, Val: {len(val_images)}, Test: {len(test_images)}")
+                
+                # Create image_id sets for filtering annotations
+                train_ids = {img['id'] for img in train_images}
+                val_ids = {img['id'] for img in val_images}
+                test_ids = {img['id'] for img in test_images}
+                
+                # 3. Create CVAT Project
+                # Always generate project name from dataset (ignore dropdown input)
+                project_name = f"{dataset_name}_project"
+                
+                print(f"🏗️ Creating CVAT project: {project_name}")
+                
+                # Create labels as dict format for ProjectWriteRequest
+                labels = [
+                    models.PatchedLabelRequest(
+                        name=cat['name'],
+                        color="#ff0000",
+                        attributes=[]
+                    ) 
+                    for cat in categories
+                ]
+                
+                project_spec = models.ProjectWriteRequest(
+                    name=project_name,
+                    labels=labels
+                )
+                
+                if org_id:
+                    project_data, _ = client.api_client.projects_api.create(
+                        project_write_request=project_spec, 
+                        org_id=org_id
+                    )
+                    project_id = project_data.id
+                else:
+                    project_data, _ = client.api_client.projects_api.create(
+                        project_write_request=project_spec
+                    )
+                    project_id = project_data.id
+                
+                print(f"  ✅ Project created (ID: {project_id})")
+                
+                # 4. Create 3 tasks (Train, Validation, Test)
+                if inf_format == 'Classification':
+                    subsets = [
+                        ("train", train_images, train_ids),
+                        ("val", val_images, val_ids),
+                        ("test", test_images, test_ids)
+                    ]
+                else:
+                    subsets = [
+                        ("Train", train_images, train_ids),
+                        ("Validation", val_images, val_ids),
+                        ("Test", test_images, test_ids)
+                    ]
+                
+                task_urls = []
+                
+                for subset_name, subset_images, subset_ids in subsets:
+                    print(f"\n📝 Creating task: {dataset_name}_{subset_name}")
+                    
+                    # Create task (labels inherited from project)
+                    task_spec = models.TaskWriteRequest(
+                        name=f"{dataset_name}_{subset_name}",
+                        project_id=project_id,  # Link to the project you just created
+                        subset=subset_name,      # Optional: Group into 'Train', 'Test', or 'Validation'
+                        segment_size=0           # Optional: 0 = all frames in one job. 
+                    )
+                    
+                    task_data, _ = client.api_client.tasks_api.create(
+                        task_write_request=task_spec,
+                        org_id=org_id
+                    )
+                    print(f"  ✓ Task created (ID: {task_data.id})")
+
+                    high_level_task = client.tasks.retrieve(task_data.id)    
+                    
+                    # Upload images for this subset
+                    print(f"  📤 Uploading {len(subset_images)} images...")
+                    image_files = [str(images_dir / img['file_name']) for img in subset_images]
+                    high_level_task.upload_data(image_files)
+                    
+                    # Create temporary COCO file with subset annotations
+                    subset_annotations = [ann for ann in annotations if ann['image_id'] in subset_ids]
+                    
+                    temp_coco = {
+                        'images': subset_images,
+                        'annotations': subset_annotations,
+                        'categories': categories,
+                        'info': coco_data.get('info', {})
+                    }
+                    
+                    temp_coco_file = output_dir / f"temp_{subset_name}.json"
+                    with open(temp_coco_file, 'w') as f:
+                        json.dump(temp_coco, f)
+                    
+                    # Upload annotations
+                    print(f"  📥 Importing {len(subset_annotations)} annotations...")
+                    high_level_task.import_annotations(
+                        format_name="COCO 1.0",
+                        filename=str(temp_coco_file)
+                    )
+                    
+                    # Apply Tag Annotations for Classification
+                    if inf_format == "Classification":
+                        try:
+                            print(f"  🏷️  Applying tag annotations for Classification...")
+                            
+                            # 1. Retrieve Task Labels to get internal IDs
+                            task_labels = high_level_task.get_labels()
+                            label_name_to_id = {l.name: l.id for l in task_labels}
+                            
+                            # 2. Prepare mapping of Image Filename -> Frame Index
+                            # Sort by file_name to match CVAT order
+                            sorted_subset_images = sorted(subset_images, key=lambda x: x['file_name'])
+                            
+                            image_id_to_frame = {}
+                            for idx, img_info in enumerate(sorted_subset_images):
+                                image_id_to_frame[img_info['id']] = idx
+                            
+                            # 3. Create Tags from Annotations
+                            category_map = {c['id']: c['name'] for c in categories}
+                            
+                            tags_to_create = []
+                            
+                            for ann in subset_annotations:
+                                img_id = ann['image_id']
+                                cat_id = ann['category_id']
+                                
+                                if img_id not in image_id_to_frame:
+                                    continue
+                                
+                                frame_idx = image_id_to_frame[img_id]
+                                cat_name = category_map.get(cat_id)
+                                
+                                # Skip empty category names
+                                if not cat_name or cat_name.strip() == '':
+                                    continue
+                                
+                                # Skip combined labels (e.g., "bear cat") for classification
+                                if cat_name and ' ' in cat_name:
+                                    continue
+                                
+                                if cat_name and cat_name in label_name_to_id:
+                                    cvat_label_id = int(label_name_to_id[cat_name])
+                                    
+                                    tag_annotation = models.LabeledImageRequest(
+                                        frame=int(frame_idx),
+                                        label_id=cvat_label_id
+                                    )
+                                    tags_to_create.append(tag_annotation)
+                            
+                            if tags_to_create:
+                                # 4. Upload Tags to Job 0
+                                jobs = high_level_task.get_jobs()
+                                if jobs:
+                                    target_job = jobs[0]
+                                    
+                                    from types import SimpleNamespace
+                                    patch_request = models.PatchedLabeledDataRequest(
+                                        tags=tags_to_create
+                                    )
+                                    
+                                    target_job.update_annotations(patch_request, action=SimpleNamespace(value="create"))
+                                    print(f"    ✅ Created {len(tags_to_create)} tag annotations")
+                                else:
+                                    print("    ⚠️ Warning: No jobs found for task. Skipping tags.")
+                            else:
+                                print("    ℹ️ No tags to create")
+                        except Exception as e:
+                            print(f"    ⚠️ Warning: Tag annotation failed: {e}")
+                    
+                    # Cleanup temp file
+                    temp_coco_file.unlink()
+                    
+                    task_url = f"{url.rstrip('/')}/tasks/{task_data.id}"
+                    task_urls.append((subset_name, task_data.id, task_url))
+                    print(f"  ✅ Task complete: {task_url}")
+                
+                # Cleanup output directory
+                print("\n🧹 Cleaning up temporary files...")
+                shutil.rmtree(output_dir, ignore_errors=True)
+                zip_path = output_dir.with_suffix(".zip")
+                if zip_path.exists():
+                    zip_path.unlink()
+                
+                # Build success message
+                project_url = f"{url.rstrip('/')}/projects/{project_id}"
+                
+                tasks_html = "<br>".join([
+                    f"<b>{name}:</b> <a href='{task_url}' target='_blank' style='color: var(--link-text-color); text-decoration: underline;'>Task {task_id}</a>"
+                    for name, task_id, task_url in task_urls
+                ])
+                
+                return (
+                    f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
+                    f"background: var(--input-background-fill); border-radius: var(--container-radius); "
+                    f"color: var(--body-text-color); min-height: 120px;'>"
+                    f"<strong>✅ CVAT Project Created Successfully!</strong><br><br>"
+                    f"<b>Project:</b> <a href='{project_url}' target='_blank' style='color: var(--link-text-color); text-decoration: underline;'>{project_name} (ID: {project_id})</a><br><br>"
+                    f"<b>Tasks Created:</b><br>{tasks_html}"
+                    f"</div>"
+                )
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return f"❌ Error creating CVAT project: {str(e)}"
+            
             # Cleanup on fail
             if 'temp_extract_dir' in locals(): shutil.rmtree(temp_extract_dir, ignore_errors=True)
             if 'temp_build_dir' in locals(): shutil.rmtree(temp_build_dir, ignore_errors=True)
             
             print(f"Detailed Error: {e}")
             return f"❌ Error during formatting: {str(e)}", None
-
+            
     def _download_and_format_task(self, task_id, output_zip_path, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
         """
         Helper method to download and format a task to a specific location.
@@ -2384,6 +2669,124 @@ class APP():
             import traceback
             traceback.print_exc()
             return False, f"❌ Error: {str(e)}", None
+    
+    def upload_to_cvat(self, zip_file_path, dataset_format):
+        """
+        Upload a dataset zip file to CVAT by creating a project and importing the dataset.
+        
+        Args:
+            zip_file_path: Path to the uploaded zip file
+            dataset_format: Format string from dropdown ("Detection", "Segmentation", "Classification")
+            
+        Returns:
+            tuple: (success: bool, message: str)
+        """
+
+        if not zip_file_path or not os.path.exists(zip_file_path):
+            return False, "❌ No zip file provided"
+        
+        cvat_format = dataset_format
+        organization="PixeVision"
+        
+        try:
+            # Step 1: Flatten the zip file
+            dataset_name = Path(zip_file_path).stem
+            temp_dir = Path(self.datasets_dir) / f"temp_{dataset_name}"
+            
+            print(f"📦 Extracting and flattening {dataset_name}...")
+            self.extract_and_flatten_zip(zip_file_path, str(temp_dir))
+            
+            # Step 2: Re-zip the flattened structure
+            flattened_zip = Path(self.datasets_dir) / f"{dataset_name}_flattened.zip"
+            shutil.make_archive(str(flattened_zip.with_suffix('')), 'zip', str(temp_dir))
+            
+            # Clean up temp directory
+            if temp_dir.exists():
+                shutil.rmtree(temp_dir)
+            
+            # Step 3: Get CVAT credentials
+            url = self.config.get("cvat_url")
+            username = self.config.get("cvat_username")
+            password = self.config.get("cvat_password")
+            
+            if not all([url, username, password]):
+                return False, "❌ Missing CVAT credentials in settings.json"
+            
+            # Sanitize URL
+            host = url.split('/projects')[0].split('/tasks')[0].split('/jobs')[0].rstrip('/')
+            
+            # Step 4: Create CVAT project and import dataset
+            print(f"🔗 Connecting to CVAT at {host}...")
+            
+            with make_client(host, credentials=(username, password)) as client:
+                # Create project
+                print(f"📁 Creating CVAT project: {dataset_name} (Org: {organization if organization else 'Personal'})...")
+                project_spec = models.ProjectWriteRequest(
+                    name=dataset_name,
+                )
+                
+                # Hybrid Approach: 
+                # 1. Use low-level API to create project (supports 'org' param reliably)
+                if organization:
+                    print(f"DEBUG: calling projects_api.create with org={organization}")
+                    (project_data, response) = client.api_client.projects_api.create(
+                        project_spec, 
+                        org=organization
+                    )
+                    print(f"DEBUG: project_data type: {type(project_data)}")
+                    print(f"DEBUG: project_data: {project_data}")
+                    
+                    if hasattr(project_data, 'id'):
+                        project_id = project_data.id
+                    elif isinstance(project_data, dict) and 'id' in project_data:
+                        project_id = project_data['id']
+                    else:
+                        print("DEBUG: Could not find id in project_data")
+                        project_id = None
+                        
+                    print(f"DEBUG: extracted project_id: {project_id}")
+                else:
+                    # Fallback to high-level if no org (or use low-level without org)
+                    project = client.projects.create(project_spec)
+                    project_id = project.id
+                
+                if project_id is None:
+                    return False, "❌ Error: CVAT Project ID is None. Check terminal logs for debug info."
+
+                # 2. Retrieve high-level Project object to use import_dataset helper
+                project = client.projects.retrieve(int(project_id))
+                
+                # Import dataset using project-level method
+                print(f"📥 Importing dataset with format: {cvat_format}...")
+                project.import_dataset(
+                    format_name=cvat_format,
+                    filename=str(flattened_zip)
+                )
+                
+                print(f"✅ Successfully uploaded to CVAT project: {dataset_name} (ID: {project_id})")
+            
+            # Clean up flattened zip
+            if flattened_zip.exists():
+                os.remove(flattened_zip)
+            
+            return True, f"✅ Successfully created CVAT project '{dataset_name}' (ID: {project_id}) and imported dataset using format '{cvat_format}'"
+            
+            
+        except Exception as e:
+            print(f"❌ Error uploading to CVAT: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Cleanup on error
+            try:
+                if temp_dir.exists():
+                    shutil.rmtree(temp_dir)
+                if flattened_zip.exists():
+                    os.remove(flattened_zip)
+            except:
+                pass
+                
+            return False, f"❌ Error uploading to CVAT: {str(e)}"
     
     def delete_formatted_dataset(self, dataset_name):
         """

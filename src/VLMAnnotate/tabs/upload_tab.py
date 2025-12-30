@@ -19,7 +19,7 @@ def create_tab(app):
                     height=207
                 )
                 
-                upload_btn = gr.Button("📤 Upload & Extract", variant="primary", size="lg", elem_id="btn")
+                upload_btn = gr.Button("📤 Upload & Extract", variant="primary", size="lg", elem_id="btn",visible=True)
                 
                 upload_status = gr.Markdown(
                     "Ready to upload..."
@@ -32,26 +32,45 @@ def create_tab(app):
                 raw_datasets_initial = app.get_all_datasets()
                 raw_initial_choices = [d["name"] for d in raw_datasets_initial]
                 raw_initial_value = raw_initial_choices[0] if raw_initial_choices else None
-                
+
+                checkbox_formatted = gr.Checkbox(
+                    label="Formatted Dataset", 
+                    interactive=True,
+                    value=False
+                )
+                dataset_format_dropdown = gr.Dropdown(
+                    choices=["COCO 1.0", "Ultralytics YOLO Classification 1.0", "Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0"],
+                    value="COCO 1.0",
+                    label="Dataset Format",
+                    interactive=True,
+                    visible=False
+                )
+
                 dataset_dropdown = gr.Dropdown(
                     choices=raw_initial_choices,
                     value=raw_initial_value,
                     label="Select Dataset",
-                    interactive=True
+                    interactive=True,
+                    visible=True
                 )
                 
                 status_output = gr.Textbox(
                     label="Selected Dataset", 
                     interactive=False, 
                     lines=2,
-                    value="Ready"
+                    value="Ready",
+                    visible=True
                 )
                 
                 with gr.Row():
-                    delete_btn = gr.Button("🗑️ Delete Selected Dataset", variant="secondary", elem_id="del_btn")
-                    annotate_btn = gr.Button("📂 Annotate", variant="primary", elem_id="btn")
+                    delete_btn = gr.Button("🗑️ Delete Selected Dataset", variant="secondary", elem_id="del_btn",visible=True)
+                    annotate_btn = gr.Button("📂 Annotate", variant="primary", elem_id="btn",visible=True)
+                    upload_cvat_btn = gr.Button("📤 Upload to CVAT", variant="primary", size="lg", elem_id="btn",visible=False)
                 
                 delete_status = gr.Markdown(visible=True)
+                upload_cvat_status = gr.Markdown(
+                    "Ready to upload..."
+                )
 
         # Video Frame Extraction Configuration
         with gr.Group(visible=False) as video_config_group:
@@ -71,69 +90,6 @@ def create_tab(app):
                 label="Videos to Process"
             )
 
-        # ============================================================
-        # 2. Upload Own Formatted Dataset Section
-        # ============================================================
-        gr.Markdown("## Upload Own Formatted Dataset")
-        gr.Markdown("Upload pre-formatted datasets (YOLO format) ready for training")
-        
-        with gr.Row():
-            # Left Column: Upload
-            with gr.Column(scale=1):
-                formatted_dataset_file = gr.File(
-                    label="Upload Formatted Dataset (ZIP)",
-                    file_count="single",
-                    file_types=[".zip"],
-                    type="filepath",
-                    height=150
-                )
-                
-                upload_formatted_btn = gr.Button(
-                    "📤 Upload Formatted Dataset", 
-                    variant="primary", 
-                    elem_id="btn"
-                )
-                
-                upload_formatted_status = gr.Markdown("Ready to upload...")
-            
-            # Right Column: Management
-            with gr.Column(scale=1):
-                # Get initial data
-                own_datasets_initial = app.get_all_own_datasets()
-                initial_choices = [d["name"] for d in own_datasets_initial]
-                initial_value = initial_choices[0] if initial_choices else None
-                initial_path = ""
-                if initial_value:
-                    dataset = next((d for d in own_datasets_initial if d["name"] == initial_value), None)
-                    if dataset:
-                        initial_path = f"Path: {dataset['path']}"
-                
-                formatted_dataset_dropdown = gr.Dropdown(
-                    choices=initial_choices,
-                    value=initial_value,  # Set initial value
-                    label="Select Formatted Dataset",
-                    interactive=True
-                )
-                
-                formatted_dataset_path_info = gr.Textbox(
-                    label="Selected Dataset Path",
-                    interactive=False,
-                    lines=2,
-                    value=initial_path  # Set initial path
-                )
-                
-                with gr.Row():
-                    delete_formatted_btn = gr.Button(
-                        "🗑️ Delete Formatted Dataset",
-                        variant="secondary",
-                        elem_id="del_btn"
-                    )
-                    train_formatted_btn = gr.Button(
-                        "🚀 Train Dataset", 
-                        variant="primary",
-                        elem_id="btn"
-                    )
-
     return {
         "tab": tab,
         "zip_file_input": zip_file_input,
@@ -147,18 +103,44 @@ def create_tab(app):
         "video_config_group": video_config_group,
         "interval_slider": interval_slider,
         "video_dataframe": video_dataframe,
-        "formatted_dataset_file": formatted_dataset_file,
-        "upload_formatted_btn": upload_formatted_btn,
-        "upload_formatted_status": upload_formatted_status,
-        "formatted_dataset_dropdown": formatted_dataset_dropdown,
-        "formatted_dataset_path_info": formatted_dataset_path_info,
-        "delete_formatted_btn": delete_formatted_btn,
-        "train_formatted_btn": train_formatted_btn
+        "checkbox_formatted": checkbox_formatted,
+        "dataset_format_dropdown": dataset_format_dropdown,
+        "upload_cvat_btn": upload_cvat_btn,
+        "upload_cvat_status": upload_cvat_status
     }
 
 def setup_events(app, components, all_components):
     # Unpack specific components needed for this tab
     c = components
+    def toggle_button_mode(checked):
+        if checked:
+            return (
+                gr.update(visible=True),  # dataset_format_dropdown
+                gr.update(visible=True),  # upload_cvat_btn
+                gr.update(visible=False),   # delete_btn
+                gr.update(visible=False),   # annotate_btn
+                gr.update(visible=False),   # dataset_dropdown
+                gr.update(visible=False),   # status_output
+                gr.update(visible=False),   # upload_btn
+            )
+        else:
+            return (
+                gr.update(visible=False),  # dataset_format_dropdown
+                gr.update(visible=False),   # upload_cvat_btn
+                gr.update(visible=True),   # delete_btn
+                gr.update(visible=True),   # annotate_btn
+                gr.update(visible=True),   # dataset_dropdown
+                gr.update(visible=True),   # status_output
+                gr.update(visible=True),   # upload_btn
+            )
+    
+    def upload_cvat_handler(zip_file, dataset_format):
+        """Handle CVAT upload button click"""
+        if not zip_file:
+            return "❌ Please upload a zip file first"
+        
+        success, message = app.upload_to_cvat(zip_file, dataset_format)
+        return message
     
     # Internal logic functions
     def upload_and_refresh(zip_file) -> tuple: 
@@ -218,9 +200,9 @@ def setup_events(app, components, all_components):
              success, result = app.extract_frames_from_dataset(dataset_name, video_df, interval_val=interval_val)
              if success:
                  target_dataset = result
-        else:
-             # Just select the regular dataset
-             app.select_dataset(target_dataset)
+        
+        # Always ensure the target dataset is selected in the backend
+        app.select_dataset(target_dataset)
         
         # 3. Prepare Updates
         # Refresh datasets list in case a temp dataset was just created
@@ -235,8 +217,12 @@ def setup_events(app, components, all_components):
 
         vlm_comps = all_components["vlm_tab"]
         
+        print(f"DEBUG on_annotate_click: target_dataset = {target_dataset}")
+        print(f"DEBUG on_annotate_click: choices = {choices}")
+        print(f"DEBUG on_annotate_click: app.selected_dataset = {app.selected_dataset}")
+        
         return (
-            gr.update(selected=vlm_comps["tab"]),  
+            gr.update(selected="vlm_tab"),   # Use explicit string ID  
             gr.update(choices=choices, value=target_dataset),
             img,    
             gallery_imgs
@@ -350,37 +336,17 @@ def setup_events(app, components, all_components):
         inputs=datasets_state,
         outputs=[c["dataset_dropdown"]]
     )
-    
-    train_comps = all_components["train_tab"]
 
-    c["upload_formatted_btn"].click(
-        fn=upload_formatted_and_refresh,
-        inputs=[c["formatted_dataset_file"]],
-        outputs=[c["upload_formatted_status"], c["formatted_dataset_dropdown"], train_comps["formatted_dataset_dropdown_train"], c["formatted_dataset_path_info"]]
-    )
-
-    c["delete_formatted_btn"].click(
-        fn=delete_formatted_and_refresh,
-        inputs=[c["formatted_dataset_dropdown"]],
-        outputs=[c["upload_formatted_status"], c["formatted_dataset_dropdown"], train_comps["formatted_dataset_dropdown_train"], c["formatted_dataset_path_info"]]
-    )
-
-    c["formatted_dataset_dropdown"].change(
-        fn=on_formatted_dataset_select,
-        inputs=[c["formatted_dataset_dropdown"]],
-        outputs=[c["formatted_dataset_path_info"]]
+    c["checkbox_formatted"].change(
+        fn=toggle_button_mode,
+        inputs=[c["checkbox_formatted"]],
+        outputs=[c["dataset_format_dropdown"], c["upload_cvat_btn"], c["delete_btn"], c["annotate_btn"],c["dataset_dropdown"],c["status_output"],c["upload_btn"]]
     )
     
-    c["train_formatted_btn"].click(
-        fn=lambda x: navigate_to_train_with_dataset(app, x),
-        inputs=[c["formatted_dataset_dropdown"]],
-        outputs=[
-            all_components["tabs"],
-            train_comps["use_formatted_checkbox"],
-            train_comps["formatted_dataset_dropdown_train"],
-            train_comps["cvat_tasks_dropdown"],
-            train_comps["train_btn"],
-            train_comps["formatted_dataset_group"],
-            train_comps["train_own_btn"]
-        ]
+    c["upload_cvat_btn"].click(
+        fn=upload_cvat_handler,
+        inputs=[c["zip_file_input"], c["dataset_format_dropdown"]],
+        outputs=[c["upload_cvat_status"]]
     )
+    
+    

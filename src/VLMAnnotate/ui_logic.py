@@ -59,9 +59,7 @@ def cleanup_and_refresh_ui(app, cvat_projects_dropdown_value):
     return (
         gr.update(choices=choices, value=new_val),  # For dataset_dropdown (Home)
         gr.update(choices=choices, value=new_val),  # For vlm_dataset_dropdown (VLM)
-        gr.update(choices=formatted_choices, value=formatted_new_val),  # For formatted_dataset_dropdown (Upload tab)
         gr.update(choices=formatted_choices, value=formatted_new_val),  # For formatted_dataset_dropdown_train (Train tab)
-        formatted_path,  # For formatted_dataset_path_info
         gr.update(choices=cvat_tasks, value=cvat_task_value)  # For cvat_tasks_dropdown (Train tab)
     )
 

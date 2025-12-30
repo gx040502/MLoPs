@@ -159,6 +159,16 @@ def setup_events(app, components, all_components):
         # Keep currently selected value if valid, or just current app selection
         val = app.selected_dataset if app.selected_dataset else None
         return gr.update(choices=choices, value=val)
+    
+    def refresh_cvat_dropdown():
+        """Refresh CVAT projects dropdown after inference"""
+        projects = app.get_cvat_projects()
+        return [
+            gr.Button(visible=False),  # Hide inference button
+            gr.Button(visible=True),   # Show CVAT button
+            gr.Dropdown(visible=True, choices=projects, interactive=True)  # Show and refresh dropdown
+        ]
+
 
     def on_vlm_dataset_select(dataset_name): 
         if not dataset_name: return gr.update(visible=False), None
@@ -233,12 +243,12 @@ def setup_events(app, components, all_components):
         inputs=[c["vlm_text_input"], c["vlm_confidence_slider"], c["inference_format"]],
         outputs=[c["inference_output"]]
     ).then(
-        fn=lambda _: [gr.Button(visible=False), gr.Button(visible=True), gr.Dropdown(visible=True)],
+        fn=lambda _: refresh_cvat_dropdown(),
         outputs=[c["inference_btn"], c["cvat_btn"], c["cvat_project_dropdown"]]
     )
 
     c["cvat_btn"].click(
-        fn=app.create_cvat_task,
+        fn=app.create_cvat_project_with_tasks,
         inputs=[c["cvat_project_dropdown"]],
         outputs=[c["inference_output"]]
     ).then(
