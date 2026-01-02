@@ -8,7 +8,7 @@ def create_tab(app):
         with gr.Column():
             # Get initial CVAT projects and select first one
             cvat_projects_initial = app.get_cvat_projects()
-            cvat_initial_value = cvat_projects_initial[0] if cvat_projects_initial else None
+            cvat_initial_value = cvat_projects_initial[0][1] if cvat_projects_initial else None
             
             cvat_projects_dropdown = gr.Dropdown(
                 label="Choose CVAT Project", 

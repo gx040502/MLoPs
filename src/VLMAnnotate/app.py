@@ -1588,14 +1588,92 @@ class APP():
             if not text_prompt or text_prompt.strip() == "":
                 return image, "Please enter a text prompt (e.g., 'a person. a car. a dog.')", ""
             
-            result = self.model.detect_objects(
+            # Split prompt by common delimiters (comma or period) to avoid combined labels
+            # Example: "bear, bird, horse" -> ["bear", "bird", "horse"]
+            import re
+            # Split by comma or period, then clean up whitespace
+            prompt_parts = re.split(r'[,.]', text_prompt)
+            prompt_parts = [p.strip() for p in prompt_parts if p.strip()]
+            
+            # If only one prompt or empty, use original behavior
+            if len(prompt_parts) <= 1:
+                result = self.model.detect_objects(
                     image=image,
-                    text_prompt= text_prompt,
+                    text_prompt=text_prompt,
                     threshold=confidence_threshold,
+                )
+                detections = result.get('detections', [])
+            else:
+                # Run detection separately for each class to avoid combined labels
+                print(f"🔀 Splitting prompt into {len(prompt_parts)} parts: {prompt_parts}")
+                all_detections = []
+                
+                for single_prompt in prompt_parts:
+                    # Add period to help GroundingDINO distinguish separate entities
+                    prompt_with_period = single_prompt if single_prompt.endswith('.') else f"{single_prompt}."
+                    
+                    result = self.model.detect_objects(
+                        image=image,
+                        text_prompt=prompt_with_period,
+                        threshold=confidence_threshold,
                     )
+                    single_detections = result.get('detections', [])
+                    all_detections.extend(single_detections)
+                    print(f"  ✓ Detected {len(single_detections)} objects for '{single_prompt}'")
+                
+                # Apply NMS: Group overlapping boxes and keep highest confidence per group
+                if all_detections:
+                    def calculate_iou(box1, box2):
+                        """Calculate Intersection over Union between two boxes"""
+                        x1_min, y1_min, x1_max, y1_max = box1
+                        x2_min, y2_min, x2_max, y2_max = box2
+                        
+                        # Calculate intersection
+                        inter_x_min = max(x1_min, x2_min)
+                        inter_y_min = max(y1_min, y2_min)
+                        inter_x_max = min(x1_max, x2_max)
+                        inter_y_max = min(y1_max, y2_max)
+                        
+                        if inter_x_max < inter_x_min or inter_y_max < inter_y_min:
+                            return 0.0
+                        
+                        inter_area = (inter_x_max - inter_x_min) * (inter_y_max - inter_y_min)
+                        box1_area = (x1_max - x1_min) * (y1_max - y1_min)
+                        box2_area = (x2_max - x2_min) * (y2_max - y2_min)
+                        union_area = box1_area + box2_area - inter_area
+                        
+                        return inter_area / union_area if union_area > 0 else 0.0
+                    
+                    # Group overlapping detections using NMS
+                    iou_threshold = 0.5  # Boxes with IoU > 0.5 are considered same object
+                    sorted_detections = sorted(all_detections, key=lambda x: x['score'], reverse=True)
+                    final_detections = []
+                    
+                    while sorted_detections:
+                        # Take the highest confidence detection
+                        best_det = sorted_detections.pop(0)
+                        final_detections.append(best_det)
+                        
+                        # Remove all detections that overlap significantly with this one
+                        remaining = []
+                        for det in sorted_detections:
+                            iou = calculate_iou(best_det['box'], det['box'])
+                            if iou <= iou_threshold:
+                                # Keep detections that don't overlap much
+                                remaining.append(det)
+                            # else: discard overlapping lower-confidence detection
+                        
+                        sorted_detections = remaining
+                    
+                    detections = final_detections
+                    print(f"📊 NMS: Kept {len(detections)} detections after removing overlaps")
+                    for det in detections:
+                        print(f"  ✓ {det['label']} (conf: {det['score']:.3f})")
+                else:
+                    detections = []
+                    print(f"📊 No detections found")
             
-            detections = result.get('detections', [])
-            
+                
             if len(detections) == 0:
                 return image, f"No objects detected with confidence >= {confidence_threshold}", ""
             
@@ -1745,10 +1823,6 @@ class APP():
                 # Skip empty labels
                 if not label_name or label_name.strip() == '':
                     print(f"⚠️ Skipping annotation for empty label")
-                    continue
-                # Skip annotations with combined labels (e.g., "bear cat")
-                if ' ' in label_name:
-                    print(f"⚠️ Skipping annotation for combined label: '{label_name}' - image will have no tag")
                     continue
                 # Check if category already exists4
                 if label_name in category_map:
