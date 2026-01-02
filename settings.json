@@ -5,78 +5,33 @@
     "datasets_dir": "./.gradio",
     "datasets": [
         {
-            "name": "screenshot_app",
-            "path": "./.gradio/screenshot_app"
+            "name": "one_animal",
+            "path": ".gradio/one_animal"
         },
         {
-            "name": "DEMO",
-            "path": "./.gradio/DEMO"
+            "name": "ALL",
+            "path": "./.gradio/ALL"
+        },
+        {
+            "name": "ALL",
+            "path": "./.gradio/ALL"
+        },
+        {
+            "name": "ALL",
+            "path": "./.gradio/ALL"
         },
         {
             "name": "DEMO - Copy",
             "path": "./.gradio/DEMO - Copy"
         },
         {
-            "name": "animal",
-            "path": "./.gradio/animal"
+            "name": "DEMO - Copy",
+            "path": "./.gradio/DEMO - Copy"
         },
         {
-            "name": "ALL",
-            "path": "./.gradio/ALL"
-        },
-        {
-            "name": "ALL_ANIMALS",
-            "path": "./.gradio/ALL_ANIMALS"
-        },
-        {
-            "name": "20251218-copy",
-            "path": "./.gradio/20251218-copy"
-        },
-        {
-            "name": "20251218-copy",
-            "path": "./.gradio/20251218-copy"
-        },
-        {
-            "name": "20251218-copy",
-            "path": "./.gradio/20251218-copy"
-        },
-        {
-            "name": "20251218-copy",
-            "path": "./.gradio/20251218-copy"
-        },
-        {
-            "name": "20251218-copy_temp_frames",
-            "path": "./.gradio/20251218-copy_temp_frames"
-        },
-        {
-            "name": "ALL",
-            "path": "./.gradio/ALL"
-        },
-        {
-            "name": "ALL",
-            "path": "./.gradio/ALL"
+            "name": "DEMO - Copy_temp_frames",
+            "path": "./.gradio/DEMO - Copy_temp_frames"
         }
     ],
-    "formatted_datasets": [
-        {
-            "name": "Project_119",
-            "path": ".gradio/formatted_project_119.zip"
-        }
-    ],
-    "own_models": [
-        {
-            "name": "CARPLATE2",
-            "path": ".gradio/own_models/CARPLATE2.pt"
-        },
-        {
-            "name": "LENTERA",
-            "path": ".gradio/own_models/LENTERA.pt"
-        }
-    ],
-    "own_datasets": [
-        {
-            "name": "animal_data - Copy",
-            "path": ".gradio/own_formatted/animal_data - Copy.zip"
-        }
-    ]
+    "formatted_datasets": []
 }

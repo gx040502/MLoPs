@@ -12,7 +12,7 @@ def create_tab(app):
                 gr.Markdown("### 🗂️ Current Dataset")
                 vlm_dataset_info = gr.Textbox(
                     label="Active Dataset",
-                    value=app.selected_dataset if app.selected_dataset else "None",
+                    value=getattr(app, 'current_dataset', None) or "None",
                     interactive=False
                 )
              
@@ -132,7 +132,7 @@ def setup_events(app, components, all_components):
         all_datasets = app.get_all_datasets()
         choices = [d["name"] for d in all_datasets]
         # Keep currently selected value if valid, or just current app selection
-        val = app.selected_dataset if app.selected_dataset else None
+        val = getattr(app, 'current_dataset', None)
         return gr.update(choices=choices, value=val)
     
     def refresh_cvat_dropdown():

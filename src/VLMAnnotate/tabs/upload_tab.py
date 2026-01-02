@@ -29,8 +29,7 @@ def create_tab(app):
                     visible=False
                 )
 
-            # Right Column: Management
-            with gr.Column(scale=1):
+            
                 gr.Markdown("## Status")
                 
                 # State to track current zip/dataset
@@ -62,24 +61,24 @@ def create_tab(app):
                     upload_cvat_btn = gr.Button("📤 Upload to CVAT", variant="primary", size="lg", elem_id="btn",visible=False)
                 
                 upload_cvat_status = gr.Markdown(visible=False)
+
+            # Video Frame Extraction Configuration
+            with gr.Group(visible=False) as video_config_group:
+                gr.Markdown("### 🎥 Video Processing Detected")
+                gr.Markdown("This dataset contains video files. Adjust extraction interval if needed.")
+                interval_slider = gr.Slider(
+                    minimum=0.0, maximum=60.0, value=1.0, step=0.1, 
+                    label="Extraction Interval (seconds)"
+                )
                 
-        # Video Frame Extraction Configuration
-        with gr.Group(visible=False) as video_config_group:
-            gr.Markdown("### 🎥 Video Processing Detected")
-            gr.Markdown("This dataset contains video files. Adjust extraction interval if needed.")
-            interval_slider = gr.Slider(
-                minimum=0.0, maximum=60.0, value=1.0, step=0.1, 
-                label="Extraction Interval (seconds)"
-            )
-            
-            video_dataframe = gr.Dataframe(
-                headers=["Video Name", "Duration"],
-                datatype=["str", "str"],
-                col_count=(2, "fixed"),
-                type="pandas",
-                interactive=False,
-                label="Videos found in archive"
-            )
+                video_dataframe = gr.Dataframe(
+                    headers=["Video Name", "Duration"],
+                    datatype=["str", "str"],
+                    col_count=(2, "fixed"),
+                    type="pandas",
+                    interactive=False,
+                    label="Videos found in archive"
+                )
 
     return {
         "tab": tab,
@@ -239,65 +238,6 @@ def setup_events(app, components, all_components):
             img,    
             gallery_imgs
         )
-
-    def upload_formatted_and_refresh(zip_file): 
-        """Handle formatted dataset upload and refresh dropdowns"""
-        success, message, dataset_name = app.save_formatted_dataset(zip_file)
-        # Get updated list
-        own_datasets = app.get_all_own_datasets()
-        choices = [d["name"] for d in own_datasets]
-        selected_value = dataset_name if success else None
-        
-        # Get path for selected dataset
-        path_text = ""
-        if selected_value:
-            dataset = next((d for d in own_datasets if d["name"] == selected_value), None)
-            if dataset:
-                path_text = f"Path: {dataset['path']}"
-        
-        train_comps = all_components["train_tab"]
-        
-        return (
-            message, 
-            gr.update(choices=choices, value=selected_value),  # formatted_dataset_dropdown (Upload tab)
-            gr.update(choices=choices, value=selected_value),  # formatted_dataset_dropdown_train (Train tab)
-            path_text  # formatted_dataset_path_info
-        )
-
-    def delete_formatted_and_refresh(dataset_name): 
-        """Handle formatted dataset deletion and refresh dropdowns"""
-        success, message = app.delete_formatted_dataset(dataset_name)
-        # Get updated list
-        own_datasets = app.get_all_own_datasets()
-        choices = [d["name"] for d in own_datasets]
-        new_value = choices[0] if choices else None
-        
-        # Get path for new selected dataset
-        path_text = ""
-        if new_value:
-            dataset = next((d for d in own_datasets if d["name"] == new_value), None)
-            if dataset:
-                path_text = f"Path: {dataset['path']}"
-        
-        train_comps = all_components["train_tab"]
-        
-        return (
-            message, 
-            gr.update(choices=choices, value=new_value),  # formatted_dataset_dropdown (Upload tab)
-            gr.update(choices=choices, value=new_value),  # formatted_dataset_dropdown_train (Train tab)
-            path_text  # formatted_dataset_path_info
-        )
-
-    def on_formatted_dataset_select(dataset_name): 
-        """Update path info when formatted dataset is selected"""
-        if not dataset_name:
-            return ""
-        own_datasets = app.get_all_own_datasets()
-        dataset = next((d for d in own_datasets if d["name"] == dataset_name), None)
-        if dataset:
-            return f"Path: {dataset['path']}"
-        return ""
-
 
     # --- Event Handlers ---
     

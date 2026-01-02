@@ -30,6 +30,18 @@ def create_tab(app):
                         label="Select Pre-trained Model",
                         interactive=True
                     )
+                    
+            with gr.Row():
+                    model_name_input = gr.Textbox(
+                        label="Model Name (Optional)",
+                        placeholder="Leave empty for auto-generated name",
+                        value=""
+                    )
+                    model_version_input = gr.Textbox(
+                        label="Version (Optional)",
+                        placeholder="Leave empty for auto-increment (v1, v2, ...)",
+                        value=""
+                    )
                 
             train_config_checkbox = gr.Checkbox(
                 value=False,
@@ -54,12 +66,7 @@ def create_tab(app):
                         step=32, 
                         label="Image Size"
                     )
-                    
-                gr.Markdown("#### 📊 Dataset Split Ratios (Must sum approx to 10)")
-                with gr.Row():
-                    train_ratio = gr.Number(value=7, label="Train Ratio", precision=0)
-                    val_ratio = gr.Number(value=2, label="Validation Ratio", precision=0)
-                    test_ratio = gr.Number(value=1, label="Test Ratio", precision=0)
+
                 
                 manual_aug_checkbox = gr.Checkbox(
                     value=False,
@@ -109,24 +116,8 @@ def create_tab(app):
                             with gr.Row():
                                 erasing = gr.Slider(0.0, 0.9, value=0.4, step=0.01, label="Erasing %")
 
-            # ============================================================
-            # NEW: Use Own Formatted Dataset Toggle
-            # ============================================================
-            use_formatted_checkbox = gr.Checkbox(
-                value=False,
-                label="📦 Use Own Formatted Dataset",
-                info="Toggle to train using your own pre-formatted dataset"
-            )
-            
-            with gr.Group(visible=False) as formatted_dataset_group:
-                formatted_dataset_dropdown_train = gr.Dropdown(
-                    label="Select Formatted Dataset",
-                    choices=[d["name"] for d in app.get_all_own_datasets()],
-                    interactive=True
-                )
-
             train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg", elem_id="btn")
-            train_own_btn = gr.Button("🚀 Train with Uploaded Dataset", variant="primary", size="lg", elem_id="btn", visible=False)
+            
             
             dataset_log = gr.Textbox(
                 label="Dataset Detail Log", 
@@ -163,9 +154,8 @@ def create_tab(app):
         "train_config_group": train_config_group,
         "experiments_slider": experiments_slider,
         "imgsz_slider": imgsz_slider,
-        "train_ratio": train_ratio,
-        "val_ratio": val_ratio,
-        "test_ratio": test_ratio,
+        "model_name_input": model_name_input,
+        "model_version_input": model_version_input,
         "manual_aug_checkbox": manual_aug_checkbox,
         "aug_settings_group": aug_settings_group,
         "base_image_state": base_image_state,
@@ -176,11 +166,7 @@ def create_tab(app):
         "perspective": perspective, "flipud": flipud, "fliplr": fliplr,
         "mosaic": mosaic, "mixup": mixup, "cutmix": cutmix, "copy_paste": copy_paste,
         "erasing": erasing,
-        "use_formatted_checkbox": use_formatted_checkbox,
-        "formatted_dataset_group": formatted_dataset_group,
-        "formatted_dataset_dropdown_train": formatted_dataset_dropdown_train,
         "train_btn": train_btn,
-        "train_own_btn": train_own_btn,
         "dataset_log": dataset_log,
         "training_log": training_log,
         "eta_output": eta_output,
@@ -199,16 +185,14 @@ def setup_events(app, components, all_components):
     def toggle_aug_settings(checkbox_val): 
         return gr.update(visible=checkbox_val)
                 
-    def trigger_training(project_id, format_name, custom_name, model, epochs, imgsz, manual_aug, 
-                                     r_train, r_val, r_test,
+    def trigger_training(project_id, format_name, custom_name, model, epochs, imgsz, model_name, model_version, manual_aug, 
                                      h_h, h_s, h_v, bgr_p, 
                                      deg, trans, scl, shr, 
                                      persp, f_ud, f_lr, 
                                      mos, mix, cut, cp, 
                                      ers): 
         # 1. Format/Prepare Data
-        split_ratios = (r_train, r_val, r_test)
-        msg, path = app.process_cvat_project(project_id, custom_name, split_ratios, format_name=format_name)
+        msg, path = app.process_cvat_project(project_id, custom_name, format_name=format_name)
         if "Error" in msg:
             yield msg, "❌ Format Failed", None
             return
@@ -248,7 +232,7 @@ def setup_events(app, components, all_components):
                         
         yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name
                     
-        result = app.start_training(path, model, epochs, imgsz, manual_aug, format_name=format_name, **aug_args)
+        result = app.start_training(path, model, epochs, imgsz, manual_aug, project_id, model_name, model_version, format_name=format_name, **aug_args)
         yield result, stats_str, None
         
     def check_training_status(project_name): 
@@ -278,68 +262,9 @@ def setup_events(app, components, all_components):
         except Exception as e:
             return gr.update(value=f"⏳ Estimated Time: Error reading status ({e})", visible=True)
 
-    def toggle_training_mode(checked): 
-        """Toggle between CVAT project training and formatted dataset training"""
-        if checked:
-            return (
-                gr.update(visible=False),  # cvat_projects_dropdown
-                gr.update(visible=False),  # train_btn
-                gr.update(visible=True),   # formatted_dataset_group
-                gr.update(visible=True)    # train_own_btn
-            )
-        else:
-            return (
-                gr.update(visible=True),   # cvat_projects_dropdown
-                gr.update(visible=True),   # train_btn
-                gr.update(visible=False),  # formatted_dataset_group
-                gr.update(visible=False)   # train_own_btn
-            )
-
     def on_train_config_toggle(checked):
         """Toggle training config visibility"""
         return gr.update(visible=checked)
-
-    def trigger_formatted_training(dataset_name, format_name, model, epochs, imgsz, manual_aug,
-                                                r_train, r_val, r_test, h_h, h_s, h_v, bgr_p,
-                                                deg, trans, scl, shr, persp, f_ud, f_lr,
-                                                mos, mix, cut, cp, ers): 
-        # 1. Get dataset path from settings
-        own_datasets = app.get_all_own_datasets()
-        dataset = next((d for d in own_datasets if d["name"] == dataset_name), None)
-                    
-        if not dataset:
-            yield "❌ Dataset not found", "❌ Error", None
-            return
-                    
-        dataset_path = dataset["path"]
-                    
-        # 2. Inspect dataset
-        stats = app.inspect_dataset_zip(dataset_path)
-        stats_str = "📊 Dataset Stats:\\n"
-        if stats.get("status") != "Error":
-            stats_str += f"Valid Images: {stats['images']}\\n"
-            stats_str += f"Classes ({stats['classes']}): {stats['class_names']}\\n"
-        else:
-            stats_str += f"Error inspecting stats: {stats.get('message')}\\n"
-                    
-        yield f"✅ Using formatted dataset: {dataset_name}\\n\\n🚀 Training Started...", stats_str, None
-                    
-        # 3. Augmentation params
-        aug_args = {
-            'hsv_h': h_h, 'hsv_s': h_s, 'hsv_v': h_v, 'bgr': bgr_p,
-            'degrees': deg, 'translate': trans, 'scale': scl, 'shear': shr,
-            'perspective': persp, 'flipud': f_ud, 'fliplr': f_lr,
-            'mosaic': mos, 'mixup': mix, 'cutmix': cut, 'copy_paste': cp,
-            'erasing': ers
-        }
-                    
-        project_name = dataset_name
-        yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name
-                    
-        # 4. Start training
-        result = app.start_training(dataset_path, model, epochs, imgsz, manual_aug, 
-                                     format_name=format_name, **aug_args)
-        yield result, stats_str, None
 
     def load_sample_image(project_str): 
         if not project_str: return None, None
@@ -379,8 +304,7 @@ def setup_events(app, components, all_components):
     c["train_btn"].click(
         fn=trigger_training,
         inputs=[
-            c["cvat_projects_dropdown"], c["format_dropdown"], c["filename_input"], c["model_dropdown"], c["experiments_slider"], c["imgsz_slider"], c["manual_aug_checkbox"],
-            c["train_ratio"], c["val_ratio"], c["test_ratio"],
+            c["cvat_projects_dropdown"], c["format_dropdown"], c["filename_input"], c["model_dropdown"], c["experiments_slider"], c["imgsz_slider"], c["model_name_input"], c["model_version_input"], c["manual_aug_checkbox"],
             c["hsv_h"], c["hsv_s"], c["hsv_v"], c["bgr"],
             c["degrees"], c["translate"], c["scale"], c["shear"],
             c["perspective"], c["flipud"], c["fliplr"],
@@ -388,33 +312,12 @@ def setup_events(app, components, all_components):
             c["erasing"]
         ],
         outputs=[c["training_log"], c["dataset_log"], c["current_training_project_name"]]
-    )
-    
-    c["use_formatted_checkbox"].change(
-        fn=toggle_training_mode,
-        inputs=[c["use_formatted_checkbox"]],
-        outputs=[c["cvat_projects_dropdown"], c["train_btn"], c["formatted_dataset_group"], c["train_own_btn"]]
     )
     
     c["train_config_checkbox"].change(
         fn=on_train_config_toggle,
         inputs=[c["train_config_checkbox"]],
         outputs=[c["train_config_group"]]
-    )
-    
-    c["train_own_btn"].click(
-        fn=trigger_formatted_training,
-        inputs=[
-            c["formatted_dataset_dropdown_train"], c["format_dropdown"], c["model_dropdown"], 
-            c["experiments_slider"], c["imgsz_slider"], c["manual_aug_checkbox"],
-            c["train_ratio"], c["val_ratio"], c["test_ratio"],
-            c["hsv_h"], c["hsv_s"], c["hsv_v"], c["bgr"],
-            c["degrees"], c["translate"], c["scale"], c["shear"],
-            c["perspective"], c["flipud"], c["fliplr"],
-            c["mosaic"], c["mixup"], c["cutmix"], c["copy_paste"],
-            c["erasing"]
-        ],
-        outputs=[c["training_log"], c["dataset_log"], c["current_training_project_name"]]
     )
     
     c["load_sample_btn"].click(

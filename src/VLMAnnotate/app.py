@@ -18,6 +18,7 @@ from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 from cvat_sdk import make_client
 from cvat_sdk.api_client import Configuration, ApiClient, models
 from types import SimpleNamespace
+from modelDatabase import ModelRegistry
 
 from .utils import COCODatasetBuilder, GroundingDINODetector
 from .utils import COCODatasetBuilder, GroundingDINODetector
@@ -192,15 +193,18 @@ class APP():
         # Limit to avoid overloading UI if too many
         return sorted(images)[:50] 
 
-    def get_model_plots(self, project_name, model_name):
+    def get_model_plots(self, model_path):
         """
         Returns list of plot images from 1.Train/{project}/{model}/...
         Specific files: BoxF1_curve, BoxP_curve, BoxPR_curve, BoxR_curve,
         confusion_matrix_normalized, confusion_matrix, labels, results.
         """
-        if not project_name or not model_name: return []
+        if not model_path: return []
         
-        model_dir = self.train_root_dir / project_name / model_name
+        # model_path is like: .../1.Train/Project_126/yolo11n-cls_49/weights/best.pt
+        # Plots are in: .../1.Train/Project_126/yolo11n-cls_49/
+        # So go up 2 levels: best.pt -> weights -> yolo11n-cls_49
+        model_dir = Path(model_path).parent.parent
         if not model_dir.exists(): return []
         
         targets = [
@@ -219,17 +223,88 @@ class APP():
         # Gradio Gallery accepts list of (path, label) tuples.
         return [(path, label) for label, path in plots]
 
-    def get_model_details(self, project_name, model_name):
-        """Returns details about the selected model."""
-        if not project_name or not model_name:
-            return ""
-            
-        model_path = self.train_root_dir / project_name / model_name / "weights" / "best.pt"
-        if not model_path.exists():
-            return "❌ Model file not found."
-            
-        return f"Path: {model_path}\nSize: {model_path.stat().st_size / (1024*1024):.2f} MB"
 
+    def predict_with_model_path(self, model_path_str, image, conf_threshold, iou_threshold):
+        """
+        Runs YOLO inference using a direct model path.
+        """
+        if image is None:
+            return None, "Please upload an image."
+        
+        model_path = Path(model_path_str)
+        if not model_path.exists():
+            return image, f"Model not found at {model_path}"
+            
+        try:
+            # Load model
+            model = YOLO(model_path)
+            
+            # Detect model type
+            is_classification = model.task == "classify"
+            
+            # Run inference
+            if is_classification:
+                print(f"Running classification prediction on model: {model_path.name}")
+                results = model.predict(image, device=0, verbose=False)
+                
+                # Format classification results
+                res = results[0]
+                top5_indices = res.probs.top5
+                top5_conf = res.probs.top5conf.tolist()
+                
+                prediction_details = {
+                    "task": "classification",
+                    "top_predictions": []
+                }
+                
+                for idx, conf in zip(top5_indices, top5_conf):
+                    class_name = res.names[idx]
+                    prediction_details["top_predictions"].append({
+                        "class": class_name,
+                        "confidence": float(conf)
+                    })
+                
+                # Return annotated image (classification doesn't change image much, so maybe just original or top1 text)
+                # But YOLO plot() for classify just returns the image usually
+                start_time = time.time()
+                annotated_img = res.plot()
+                postprocess_time = (time.time() - start_time) * 1000
+                print(f"Prediction done. Time: {postprocess_time:.2f}ms")
+                
+                return annotated_img, json.dumps(prediction_details, indent=2)
+            
+            else:
+                # Detection/Segmentation
+                print(f"Running detection/segmentation prediction on: {model_path.name}")
+                start_time = time.time()
+                params = {"conf": conf_threshold, "iou": iou_threshold, "device": 0, "verbose": False}
+                results = model.predict(image, **params)
+                
+                res = results[0]
+                annotated_img = res.plot()
+                postprocess_time = (time.time() - start_time) * 1000
+                print(f"Prediction done. Time: {postprocess_time:.2f}ms")
+                
+                # Format detection results
+                detections = []
+                for box in res.boxes:
+                    cls_id = int(box.cls[0])
+                    class_name = res.names[cls_id]
+                    conf = float(box.conf[0])
+                    xyxy = box.xyxy[0].tolist()
+                    detections.append({
+                        "class": class_name,
+                        "confidence": conf,
+                        "bbox": xyxy
+                    })
+                
+                return annotated_img, json.dumps(detections, indent=2)
+
+        except Exception as e:
+            print(f"Prediction error: {e}")
+            import traceback
+            traceback.print_exc()
+            return image, f"Error: {str(e)}"
     def predict_with_model(self, project_name, model_name, image, conf_threshold, iou_threshold):
         """
         Runs YOLO inference on the image using the selected model.
@@ -703,17 +778,17 @@ class APP():
             traceback.print_exc()
             return image, json.dumps({"error": str(e)}, indent=2)
 
-    def get_random_sample_images(self, task_id, count=4):
+    def get_random_sample_images(self, project_id, count=4):
         """
-        Extracts up to 'count' random images from the CVAT task zip.
+        Extracts up to 'count' random images from the CVAT project zip.
         Downloads the zip if it doesn't exist.
         Returns: List of PIL Image objects
         """
-        if not task_id:
+        if not project_id:
             return None
         
         # 1. Check/Download Zip
-        raw_zip_path = Path(self.datasets_dir) / f"cvat_task_{task_id}.zip"
+        raw_zip_path = Path(self.datasets_dir) / f"cvat_project_{project_id}.zip"
         
         if not raw_zip_path.exists():
             # Attempt download (simplified version of download logic)
@@ -723,11 +798,11 @@ class APP():
                 password = self.config.get("cvat_password")
                 host = url.split('/projects')[0].split('/tasks')[0].split('jobs')[0].rstrip('/')
                 
-                print(f"Downloading Task {task_id} for preview...")
+                print(f"Downloading Project {project_id} for preview...")
                 with make_client(host, credentials=(username, password)) as client:
-                    task = client.tasks.retrieve(int(task_id))
+                    project = client.projects.retrieve(int(project_id))
                     raw_zip_path.parent.mkdir(parents=True, exist_ok=True)
-                    task.export_dataset(
+                    project.export_dataset(
                         format_name="Ultralytics YOLO Detection 1.0",
                         filename=str(raw_zip_path),
                         include_images=True
@@ -975,7 +1050,7 @@ class APP():
             print(f"Augmentation preview error: {e}")
             return images[0] if images else None
         
-    def start_training(self, formatted_path, model_name, epochs, imgsz=640, manual_aug=False, format_name="Ultralytics YOLO Detection 1.0", **kwargs):
+    def start_training(self, formatted_path, model_name, epochs, imgsz=640, manual_aug=False, cvat_project_id=None, db_model_name="", db_model_version="", format_name="Ultralytics YOLO Detection 1.0", **kwargs):
         """
         Orchestrates the training process:
         1. Locate and extract the formatted dataset zip
@@ -1109,6 +1184,53 @@ class APP():
             )
             
             if success:
+                # Register model in database
+                try:
+                    if cvat_project_id:
+                        registry = ModelRegistry('model_registry.db')
+                        
+                        # Determine final model name and version
+                        final_model_name = db_model_name.strip() if db_model_name.strip() else f"Project_{project_name}"
+                        
+                        # Prepare project ID
+                        project_id_int = int(str(cvat_project_id).split(':')[0].strip()) if isinstance(cvat_project_id, str) else cvat_project_id
+                        
+                        if db_model_version.strip():
+                            final_version = db_model_version.strip()
+                        else:
+                            # Auto-increment version
+                            models_list = registry.list_models(cvat_project_id=project_id_int)
+                            final_version = f"v{len(models_list) + 1}"
+                        
+                        # Register the trained model - find the latest run directory
+                        # Training saves to: 1.Train/{project_name}/{model}_{epochs}/weights/best.pt
+                        project_dir = self.train_root_dir / project_name
+                        
+                        # Find the most recent run directory (has weights/best.pt)
+                        best_model_path = None
+                        if project_dir.exists():
+                            for run_dir in sorted(project_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+                                potential_path = run_dir / "weights" / "best.pt"
+                                if potential_path.exists():
+                                    best_model_path = potential_path
+                                    break
+                        
+                        if best_model_path and best_model_path.exists():
+                            model_id = registry.register_model(
+                                cvat_project_id=project_id_int,
+                                name=final_model_name,
+                                version=final_version,
+                                model=str(best_model_path)
+                            )
+                            print(f"✅ Model registered in database with ID: {model_id}, Name: {final_model_name} {final_version}")
+                            msg += f"\n\n📊 Model registered: {final_model_name} {final_version} (ID: {model_id})"
+                        else:
+                            print(f"⚠️ Best model not found in {project_dir}, skipping registration")
+                except Exception as reg_err:
+                    print(f"⚠️ Failed to register model in database: {reg_err}")
+                    import traceback
+                    traceback.print_exc()
+
                 try:
                     # Check if file is in the root .gradio dir (not own_formatted)
                     # and starts with formatted_task_ or manually matches
@@ -1151,97 +1273,6 @@ class APP():
     def get_all_own_datasets(self, name=None):
         # A list of user-uploaded formatted datasets from the configuration
         return self.config.get("own_datasets", [])
-
-    def select_formatted_dataset_path(self, name):
-        """
-        Retrieves the path of a formatted dataset by its name and returns statistics.
-        """
-        datasets = self.config.get("formatted_datasets", [])
-        dataset = next((d for d in datasets if d["name"] == name), None)
-        
-        if not dataset:
-             return (
-                f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
-                f"background: var(--input-background-fill); border-radius: var(--container-radius); "
-                f"color: var(--body-text-color); min-height: 80px;'>"
-                f"Formatted Dataset '<b>{name}</b>' not found."
-                f"</div>"
-            )
-
-        zip_path_str = dataset.get('path', '')
-        zip_path = Path(zip_path_str)
-        
-        stats = {
-            "train_images": 0, "val_images": 0,
-            "train_labels": 0, "val_labels": 0,
-            "classes": "N/A"
-        }
-
-        if zip_path.exists():
-            try:
-                with zipfile.ZipFile(zip_path, 'r') as z:
-                    file_list = z.namelist()
-                    
-                    # Count files based on paths
-                    for f in file_list:
-                        if f.endswith('/'): continue # Skip directories
-                        
-                        lower_f = f.lower()
-                        # Adjust detection logic based on standard structure
-                        if "images/train/" in lower_f: stats["train_images"] += 1
-                        elif "images/validation/" in lower_f: stats["val_images"] += 1
-                        elif "labels/train/" in lower_f: stats["train_labels"] += 1
-                        elif "labels/validation/" in lower_f: stats["val_labels"] += 1
-                        
-                    # Parse data.yaml for classes
-                    try:
-                        # Find data.yaml (could be at root or nested?) Assuming root based on formatting logic
-                        # But formatting logic might put it in a subfolder if zipped incorrectly, 
-                        # however our formatting logic puts it at root of archive usually 
-                        # (shutil.make_archive of temp_build_dir).
-                        # Let's check for 'data.yaml' or any '*/data.yaml'
-                        yaml_file = next((f for f in file_list if f.endswith('data.yaml')), None)
-                        
-                        if yaml_file:
-                            with z.open(yaml_file) as yf:
-                                content = yf.read().decode('utf-8')
-                                # Simple parsing to avoid PyYAML dependency inside this function if not imported
-                                # But we can just search for 'nc:'
-                                lines = content.split('\n')
-                                for line in lines:
-                                    if line.strip().startswith('nc:'):
-                                        stats["classes"] = line.split(':')[1].strip()
-                                        break
-                                else:
-                                    # Fallback: check names list length
-                                    # This is complex to parse via string split, keeping it simple for now
-                                    pass
-                    except Exception as e:
-                        print(f"Error reading yaml: {e}")
-                        stats["classes"] = "Error"
-                        
-            except Exception as e:
-                print(f"Error reading zip: {e}")
-                return (
-                    f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
-                    f"background: var(--input-background-fill); border-radius: var(--container-radius); "
-                    f"color: var(--body-text-color); min-height: 80px;'>"
-                    f"Error reading dataset file: {e}"
-                    f"</div>"
-                )
-        
-        return (
-            f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
-            f"background: var(--input-background-fill); border-radius: var(--container-radius); "
-            f"color: var(--body-text-color); min-height: 80px; font-family: monospace;'>"
-            f"<b>Selected:</b> {name}<br>"
-            f"<b>Path:</b> {zip_path_str}<br>"
-            f"<hr style='margin: 5px 0; border-color: var(--border-color-primary);'>"
-            f"<b>Images:</b> Train: {stats['train_images']} | Val: {stats['val_images']}<br>"
-            f"<b>Labels:</b> Train: {stats['train_labels']} | Val: {stats['val_labels']}<br>"
-            f"<b>Classes:</b> {stats['classes']}"
-            f"</div>"
-        )
 
     def get_dataset_by_name(self, name):
         """
@@ -2366,11 +2397,10 @@ class APP():
             print(f"Detailed Error: {e}")
             return f"❌ Error during formatting: {str(e)}", None
             
-    def _download_and_format_project(self, project_id, output_zip_path, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
+    def _download_and_format_project(self, project_id, output_zip_path, format_name="Ultralytics YOLO Detection 1.0"):
         """
         Helper method to download and format a project to a specific location.
         Returns (SuccessBool, Message)
-        split_ratios: tuple of (train, val, test) percentages. Should sum roughly to 100.
         """
         output_zip_path = Path(output_zip_path)
         print(f"DEBUG: Internal Processing CVAT Project {project_id} -> {output_zip_path}")
@@ -2412,136 +2442,74 @@ class APP():
             
             if is_classification:
                 # --- CLASSIFICATION FORMAT ---
-                # Structure: temp_extract_dir/train/dog/, train/cat/, etc.
+                # CVAT exports are already split: train/, val/, test/
+                # Just copy the structure as-is
                 src_train_dir = temp_extract_dir / "train"
+                src_val_dir = temp_extract_dir / "val"
+                src_test_dir = temp_extract_dir / "test"
                 
                 if not src_train_dir.exists():
                     return False, "Error: 'train' directory not found for Classification format."
                 
-                # Get all class folders
-                class_folders = [d for d in src_train_dir.iterdir() if d.is_dir()]
+                # Copy pre-split directories
+                print("Copying pre-split classification structure...")
+                shutil.copytree(src_train_dir, temp_build_dir / "train")
                 
-                if not class_folders:
-                    return False, "Error: No class folders found in 'train' directory."
-                
-                print(f"Found {len(class_folders)} classes: {[d.name for d in class_folders]}")
-                
-                # Normalize split ratios
-                r_train, r_val, r_test = split_ratios
-                total_r = r_train + r_val + r_test
-                if total_r == 0: total_r = 100
-                
-                # Create output structure for each class
-                for class_folder in class_folders:
-                    class_name = class_folder.name
+                if src_val_dir.exists():
+                    shutil.copytree(src_val_dir, temp_build_dir / "val")
+                else:
+                    print("Warning: 'val' directory not found")
                     
-                    # Create directories for this class
-                    (temp_build_dir / "train" / class_name).mkdir(parents=True, exist_ok=True)
-                    (temp_build_dir / "val" / class_name).mkdir(parents=True, exist_ok=True)
-                    (temp_build_dir / "test" / class_name).mkdir(parents=True, exist_ok=True)
-                    
-                    # Get all images in this class folder
-                    images = [f for f in class_folder.iterdir() 
-                             if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']]
-                    
-                    if not images:
-                        print(f"Warning: No images found in class '{class_name}'")
-                        continue
-                    
-                    # Shuffle and split
-                    random.seed(42)
-                    random.shuffle(images)
-                    n_total = len(images)
-                    
-                    n_train = int(n_total * (r_train / total_r))
-                    n_val = int(n_total * (r_val / total_r))
-                    n_test = n_total - n_train - n_val
-                    
-                    train_imgs = images[:n_train]
-                    val_imgs = images[n_train:n_train+n_val]
-                    test_imgs = images[n_train+n_val:]
-                    
-                    # Copy images to respective folders
-                    for img in train_imgs:
-                        shutil.copy2(img, temp_build_dir / "train" / class_name / img.name)
-                    for img in val_imgs:
-                        shutil.copy2(img, temp_build_dir / "val" / class_name / img.name)
-                    for img in test_imgs:
-                        shutil.copy2(img, temp_build_dir / "test" / class_name / img.name)
-                    
-                    print(f"Class '{class_name}': {n_train} train, {n_val} val, {n_test} test")
+                if src_test_dir.exists():
+                    shutil.copytree(src_test_dir, temp_build_dir / "test")
+                else:
+                    print("Warning: 'test' directory not found")
                 
                 # No data.yaml needed for Classification - YOLOv8 infers classes from folder structure
                 
             else:
                 # --- DETECTION/SEGMENTATION FORMAT ---
-                # Structure: temp_extract_dir/images/train/, labels/train/
-                src_images_dir = temp_extract_dir / "images" / "train"
-                src_labels_dir = temp_extract_dir / "labels" / "train"
+                # CVAT exports are already split: images/Train/, images/Validation/, images/Test/
+                # Just copy the structure and update data.yaml paths
                 
-                if not src_images_dir.exists():
-                    return False, "Error: 'images/train' not found."
+                if not (temp_extract_dir / "images").exists():
+                    return False, "Error: 'images' directory not found."
 
-                images = [f for f in src_images_dir.iterdir() if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']]
+                # Copy pre-split structure
+                print("Copying pre-split detection/segmentation structure...")
+                shutil.copytree(temp_extract_dir / "images", temp_build_dir / "images")
+                shutil.copytree(temp_extract_dir / "labels", temp_build_dir / "labels")
                 
-                # Shuffle and Split based on ratios
-                random.seed(42)
-                random.shuffle(images)
-                n_total = len(images)
+                # Generate txt files by scanning actual images
+                for split_name, txt_name in [("Train", "Train.txt"), ("Validation", "Validation.txt"), ("Test", "Test.txt")]:
+                    images_dir = temp_build_dir / "images" / split_name
+                    if images_dir.exists():
+                        image_files = sorted([f for f in images_dir.iterdir() 
+                                            if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']])
+                        
+                        # Write relative paths to txt file
+                        with open(temp_build_dir / txt_name, 'w') as f:
+                            for img_file in image_files:
+                                # Write path as ./images/Split/filename.jpg
+                                relative_path = f"./images/{split_name}/{img_file.name}\n"
+                                f.write(relative_path)
+                        
+                        print(f"Generated {txt_name} with {len(image_files)} images")
+                    else:
+                        print(f"Warning: {split_name} directory not found, skipping {txt_name}")
                 
-                # Normalize ratios to ensure they sum to 100 (or handle raw counts, but percents are easier)
-                r_train, r_val, r_test = split_ratios
-                total_r = r_train + r_val + r_test
-                if total_r == 0: total_r = 100 # Avoid div by zero
-                
-                n_train = int(n_total * (r_train / total_r))
-                n_val = int(n_total * (r_val / total_r))
-                # Assign remaining to test to ensure all images are used (and handle rounding errors)
-                n_test = n_total - n_train - n_val
-                
-                train_images = images[:n_train]
-                val_images = images[n_train:n_train+n_val]
-                test_images = images[n_train+n_val:]
-                
-                # Prepare Structure
-                dirs_to_create = [
-                    temp_build_dir / "images" / "Train",
-                    temp_build_dir / "images" / "Validation",
-                    temp_build_dir / "images" / "Test",
-                    temp_build_dir / "labels" / "Train",
-                    temp_build_dir / "labels" / "Validation",
-                    temp_build_dir / "labels" / "Test"
-                ]
-                for d in dirs_to_create:
-                    d.mkdir(parents=True, exist_ok=True)
-                
-                train_txt_lines = []
-                val_txt_lines = []
-                test_txt_lines = []
-                
-                def process_files(file_list, dest_subset, txt_list):
-                    for img_path in file_list:
-                        shutil.copy2(img_path, temp_build_dir / "images" / dest_subset / img_path.name)
-                        label_name = img_path.stem + ".txt"
-                        src_label = src_labels_dir / label_name
-                        if src_label.exists():
-                            shutil.copy2(src_label, temp_build_dir / "labels" / dest_subset / label_name)
-                        txt_list.append(f"./images/{dest_subset}/{img_path.name}")
-
-                process_files(train_images, "Train", train_txt_lines)
-                process_files(val_images, "Validation", val_txt_lines)
-                process_files(test_images, "Test", test_txt_lines)
-                
-                with open(temp_build_dir / "Train.txt", "w") as f: f.write("\n".join(train_txt_lines))
-                with open(temp_build_dir / "Validation.txt", "w") as f: f.write("\n".join(val_txt_lines))
-                with open(temp_build_dir / "Test.txt", "w") as f: f.write("\n".join(test_txt_lines))
-                    
-                # Modify data.yaml
+                # Update data.yaml paths
                 orig_yaml = temp_extract_dir / "data.yaml"
                 if orig_yaml.exists():
                     with open(orig_yaml, 'r') as f:
                         yaml_content = f.read()
-                    filtered_lines = [l for l in yaml_content.splitlines() if not (l.strip().startswith('train:') or l.strip().startswith('val:') or l.strip().startswith('validation:') or l.strip().startswith('test:'))]
+                    # Remove old path lines (both lowercase and capitalized versions from CVAT)
+                    filtered_lines = [l for l in yaml_content.splitlines() if not (
+                        l.strip().startswith('train:') or l.strip().startswith('val:') or 
+                        l.strip().startswith('validation:') or l.strip().startswith('test:') or
+                        l.strip().startswith('Train:') or l.strip().startswith('Validation:') or 
+                        l.strip().startswith('Test:')
+                    )]
                     final_yaml_content = "train: Train.txt\nval: Validation.txt\ntest: Test.txt\n" + "\n".join(filtered_lines)
                     with open(temp_build_dir / "data.yaml", "w") as f:
                         f.write(final_yaml_content)
@@ -2568,7 +2536,7 @@ class APP():
             if temp_build_dir.exists(): shutil.rmtree(temp_build_dir, ignore_errors=True)
 
 
-    def process_cvat_project(self, project_id, custom_name=None, split_ratios=(70, 20, 10), format_name="Ultralytics YOLO Detection 1.0"):
+    def process_cvat_project(self, project_id, custom_name=None, format_name="Ultralytics YOLO Detection 1.0"):
         """
         Public wrapper to download/format project and register the dataset.
         """
@@ -2584,7 +2552,7 @@ class APP():
             formatted_zip_path = Path(self.datasets_dir) / f"formatted_project_{project_id}.zip"
             dataset_entry_name = f"Project_{project_id}"
             
-        success, msg = self._download_and_format_project(project_id, formatted_zip_path, split_ratios, format_name=format_name)
+        success, msg = self._download_and_format_project(project_id, formatted_zip_path, format_name=format_name)
         
         if not success:
             return f"❌ {msg}", None
@@ -2601,68 +2569,6 @@ class APP():
              
         return f"✅ Downloaded & Formatted Successfully!\\nPath: {formatted_zip_path}", str(formatted_zip_path)
 
-    def save_formatted_dataset(self, zip_file_path):
-        """
-        Save uploaded formatted dataset to .gradio/own_formatted/ and update settings.json
-        
-        Args:
-            zip_file_path: Path to uploaded formatted dataset zip
-            
-        Returns:
-            tuple: (success: bool, message: str, dataset_name: str)
-        """
-        if not zip_file_path:
-            return False, "❌ No file uploaded", None
-        
-        try:
-            uploaded_path = Path(zip_file_path)
-            if not uploaded_path.exists():
-                return False, f"❌ File not found: {zip_file_path}", None
-            
-            # Create own_formatted directory
-            own_formatted_dir = Path(self.datasets_dir) / "own_formatted"
-            own_formatted_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Use original filename (without .zip for dataset name)
-            dataset_name = uploaded_path.stem  # Remove .zip extension
-            dest_path = own_formatted_dir / uploaded_path.name
-            
-            # Copy file to destination
-            shutil.copy2(uploaded_path, dest_path)
-            
-            print(f"📦 Saved formatted dataset: {uploaded_path.name} → {dest_path}")
-            
-            # Update settings.json - save to own_datasets (user-uploaded)
-            if "own_datasets" not in self.config:
-                self.config["own_datasets"] = []
-            
-            # Check if dataset already exists
-            existing_idx = next((i for i, d in enumerate(self.config["own_datasets"]) 
-                               if d.get("name") == dataset_name), -1)
-            
-            dataset_entry = {
-                "name": dataset_name,
-                "path": str(dest_path)
-            }
-            
-            if existing_idx >= 0:
-                # Update existing path
-                self.config["own_datasets"][existing_idx] = dataset_entry
-                message = f"✅ Formatted dataset updated: {dataset_name}"
-            else:
-                # Add new entry
-                self.config["own_datasets"].append(dataset_entry)
-                message = f"✅ Formatted dataset saved: {dataset_name}"
-            
-            self.save_config()
-            
-            return True, message, dataset_name
-            
-        except Exception as e:
-            print(f"Error saving formatted dataset: {e}")
-            import traceback
-            traceback.print_exc()
-            return False, f"❌ Error: {str(e)}", None
     
     def upload_to_cvat(self, zip_file_path, dataset_format):
         """
@@ -2781,48 +2687,6 @@ class APP():
                 pass
                 
             return False, f"❌ Error uploading to CVAT: {str(e)}"
-    
-    def delete_formatted_dataset(self, dataset_name):
-        """
-        Delete formatted dataset from filesystem and settings.json
-        
-        Args:
-            dataset_name: Name of formatted dataset to delete
-            
-        Returns:
-            tuple: (success: bool, message: str)
-        """
-        if not dataset_name:
-            return False, "❌ Please select a dataset to delete"
-        
-        try:
-            own_datasets = self.config.get("own_datasets", [])
-            dataset_entry = next((d for d in own_datasets if d.get("name") == dataset_name), None)
-            
-            if not dataset_entry:
-                return False, f"❌ Dataset '{dataset_name}' not found in settings"
-            
-            # Delete physical file
-            dataset_path = Path(dataset_entry.get("path", ""))
-            if dataset_path.exists():
-                os.remove(dataset_path)
-                print(f"🗑️ Deleted file: {dataset_path}")
-            else:
-                print(f"⚠️ File not found (already deleted?): {dataset_path}")
-            
-            # Remove from config
-            self.config["own_datasets"] = [
-                d for d in own_datasets if d.get("name") != dataset_name
-            ]
-            self.save_config()
-            
-            return True, f"✅ Formatted dataset '{dataset_name}' deleted successfully"
-            
-        except Exception as e:
-            print(f"Error deleting formatted dataset: {e}")
-            import traceback
-            traceback.print_exc()
-            return False, f"❌ Error: {str(e)}"
 
 
     def cleanup_preview(self):
