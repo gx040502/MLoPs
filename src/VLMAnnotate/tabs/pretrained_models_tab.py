@@ -1,5 +1,9 @@
 import gradio as gr
 import json
+import os
+from ultralytics import YOLO
+from modelDatabase import ModelRegistry
+from datetime import datetime
 
 def create_tab(app):
     with gr.Tab("🤖 Pre-Trained Models") as tab:
@@ -19,19 +23,23 @@ def create_tab(app):
                     upload_model_status = gr.Markdown(
                         label="Upload Status",
                     )
-            own_model_dropdown = gr.Dropdown(
-                label="Select Model",
-                choices=[],
-                interactive=True
-            )
-            own_delete_btn = gr.Button("🗑️ Delete Model", elem_id="del_btn")
+            with gr.Row():
+                with gr.Column(scale=1):
+                    own_model_dropdown = gr.Dropdown(
+                        label="Select Model",
+                        choices=[],
+                        interactive=True
+                    )
+                    own_delete_btn = gr.Button("🗑️ Delete Model", elem_id="del_btn")
+                with gr.Column(scale=2):
+                    with gr.Accordion("📊 Model Details", open=False):
+                        own_model_details = gr.HTML(
+                            value="<p>Select a model to view details</p>"
+                        )
             
-            own_model_details = gr.Code(
-                label="Model Details",
-                interactive=False,
-                language="json",
-                lines=10,
-            )
+            # Spacer for visual separation
+            gr.HTML("<div style='margin: 20px 0;'></div>")
+            
             with gr.Row():
                 with gr.Column():
                     gr.Markdown("### 🖼️ Run Prediction")
@@ -110,12 +118,188 @@ def setup_events(app, components, all_components):
         return message, updated_dropdown, ""
     
     def display_model_details(model_name):
-        """Display selected model details"""
+        """Display selected model details with rich HTML formatting"""
         if not model_name:
-            return ""
+            return "<p>Select a model to view details</p>"
         
-        details = app.get_own_model_details(model_name)
-        return json.dumps(details, indent=2)
+        try:
+            # Get model path from config
+            own_models = app.load_own_models()
+            model_entry = next((m for m in own_models if m.get("name") == model_name), None)
+            
+            if not model_entry:
+                return "<p>Model not found in configuration</p>"
+            
+            model_path = model_entry.get('path', '')
+            
+            if not model_path or not os.path.exists(model_path):
+                return "<p>Model file not found</p>"
+                
+            # Load model and get info
+            model = YOLO(model_path)
+            registry = ModelRegistry()
+            model_info = registry.get_pt_model_info(model)
+            
+            # Format labels - each on new line
+            labels = model_info['labels']
+            label_str = '\n'.join([f"{k}: {v}" for k, v in labels.items()]) if isinstance(labels, dict) else str(labels)
+            
+            # Calculate score percentage
+            score_pct = model_info.get('primary_score', 0) * 100
+            score_color = "#34d399" if score_pct > 80 else "#fbbf24" if score_pct > 50 else "#f87171"
+            
+            # Format trained date to human-readable
+            trained_at_raw = model_info.get('trained_at', 'N/A')
+            if trained_at_raw != 'N/A':
+                try:
+                    # Parse ISO format datetime
+                    dt = datetime.fromisoformat(trained_at_raw.replace('Z', '+00:00'))
+                    trained_at_formatted = dt.strftime('%b %d, %Y %I:%M %p')
+                except:
+                    trained_at_formatted = trained_at_raw
+            else:
+                trained_at_formatted = 'N/A'
+            
+            # Format metrics
+            metrics = model_info.get('metrics', {})
+            
+            html = f"""
+            <style>
+                .model-dashboard {{
+                    font-family: 'Segoe UI', Roboto, Helvetica, sans-serif;
+                    color: #e5e7eb;
+                    max-width: 100%;
+                }}
+                .header-section {{
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 20px;
+                    gap: 12px;
+                }}
+                .model-title {{ 
+                    font-size: 1.5rem; 
+                    font-weight: 700; 
+                    margin: 0; 
+                    color: #ffffff;
+                }}
+                .info-grid {{
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    gap: 16px;
+                }}
+                .info-card {{
+                    background: #1f2937;
+                    border: 1px solid #374151;
+                    border-radius: 12px;
+                    padding: 16px;
+                    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
+                }}
+                .card-title {{
+                    font-size: 0.95rem; 
+                    font-weight: 600; 
+                    color: #9ca3af;
+                    margin-bottom: 12px; 
+                    text-transform: uppercase; 
+                    letter-spacing: 0.05em;
+                    border-bottom: 1px solid #374151;
+                    padding-bottom: 8px;
+                }}
+                .data-row {{
+                    display: flex; 
+                    justify-content: space-between;
+                    margin-bottom: 8px; 
+                    font-size: 0.9rem;
+                }}
+                .data-label {{ color: #d1d5db; }}
+                .data-value {{ font-weight: 500; color: #ffffff; text-align: right; }}
+                .progress-bg {{
+                    background: #374151;
+                    height: 8px; 
+                    width: 100%; 
+                    border-radius: 4px; 
+                    margin-top: 6px; 
+                    overflow: hidden;
+                }}
+                .progress-fill {{ 
+                    height: 100%; 
+                    border-radius: 4px; 
+                    transition: width 0.3s ease; 
+                    box-shadow: 0 0 8px {score_color};
+                }}
+                .classes-box {{
+                    background: #111827;
+                    padding: 8px;
+                    border: 1px solid #374151;
+                    border-radius: 6px; 
+                    font-size: 0.8rem; 
+                    color: #9ca3af;
+                    white-space: pre-line; 
+                    max-height: 150px;
+                    overflow-y: auto;
+                }}
+            </style>
+            
+            <div class="model-dashboard">
+                <div class="header-section">
+                    <h3 class="model-title">{model_name}</h3>
+                </div>
+                
+                <div class="info-grid">
+                    <div class="info-card">
+                        <div class="card-title">🎯 Performance</div>
+                        <div class="data-row">
+                            <span class="data-label">Task</span>
+                            <span class="data-value">{model_info['task'].title()}</span>
+                        </div>
+                        <div style="margin-bottom: 12px;">
+                            <div class="data-row" style="margin-bottom:2px;">
+                                <span class="data-label">{model_info['score_type']}</span>
+                                <span class="data-value" style="color: {score_color}">{model_info['primary_score']:.4f}</span>
+                            </div>
+                            <div class="progress-bg">
+                                <div class="progress-fill" style="width: {score_pct}%; background: {score_color};"></div>
+                            </div>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">🏷️ Total Classes</span>
+                            <span class="data-value">{len(labels)}</span>
+                        </div>
+                        <div class="classes-box" title="{label_str}">{label_str}</div>
+                    </div>
+                    
+                    <div class="info-card">
+                        <div class="card-title">📦 Storage & Hardware</div>
+                        <div class="data-row">
+                            <span class="data-label">File Size</span>
+                            <span class="data-value">{model_info.get('model_size_mb', 0):.2f} MB</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">VRAM Usage</span>
+                            <span class="data-value">{model_info.get('vram_gb', 0):.2f} GB</span>
+                        </div>
+                        <div class="data-row">
+                            <span class="data-label">Trained Date</span>
+                            <span class="data-value">{trained_at_formatted}</span>
+                        </div>
+                        <div style="margin-top:10px; font-size:0.75rem; color:#6b7280;">
+                            Path: ...{model_path[-30:]}
+                        </div>
+                    </div>
+                    
+                    <div class="info-card">
+                        <div class="card-title">📈 Key Metrics</div>
+                        {''.join([
+                            f'<div class="data-row"><span class="data-label">{k}</span><span class="data-value">{v if isinstance(v, str) else f"{v:.4f}"}</span></div>' 
+                            for k, v in list(metrics.items())[:6]
+                        ])}
+                    </div>
+                </div>
+            </div>
+            """
+            return html
+            
+        except Exception as e:
+            return f"<p>Error loading model details: {str(e)}</p>"
     
     def predict_own_model(model_name, image, conf, iou):
         """Run prediction with selected custom model"""

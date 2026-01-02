@@ -1,6 +1,7 @@
 import gradio as gr
 import json
 from modelDatabase import ModelRegistry
+from datetime import datetime
 
 def create_tab(app):
     with gr.Tab("🎱 Predict Model") as tab:
@@ -21,14 +22,6 @@ def create_tab(app):
             
             initial_project_id = project_choices[0][1] if project_choices else None
             
-            project_dropdown = gr.Dropdown(
-                label="1. Select CVAT Project",
-                choices=project_choices,
-                value=initial_project_id,
-                interactive=True,
-                elem_id="project_dropdown"
-            )
-            
             # 2. Model Selection (filtered by project)
             # Get initial models for first project
             initial_models = registry.list_models(cvat_project_id=initial_project_id) if initial_project_id else []
@@ -38,14 +31,22 @@ def create_tab(app):
                 model_choices.append((choice_label, m['id']))
             
             initial_model_id = model_choices[0][1] if model_choices else None
-            
-            model_dropdown = gr.Dropdown(
-                label="2. Select Trained Model",
-                choices=model_choices,
-                value=initial_model_id,
-                interactive=True,
-                elem_id="model_dropdown"
-            )
+
+            with gr.Row():
+                project_dropdown = gr.Dropdown(
+                    label="1. Select CVAT Project",
+                    choices=project_choices,
+                    value=initial_project_id,
+                    interactive=True,
+                    elem_id="project_dropdown"
+                )
+                model_dropdown = gr.Dropdown(
+                    label="2. Select Trained Model",
+                    choices=model_choices,
+                    value=initial_model_id,
+                    interactive=True,
+                    elem_id="model_dropdown"
+                )
             
             with gr.Accordion("📊 Model Details", open=False):
                 model_details_html = gr.HTML(
@@ -69,6 +70,8 @@ def create_tab(app):
                     object_fit="contain",
                     interactive=False
                 )
+                
+            gr.HTML("<div style='margin: 20px 0;'></div>")
 
             # 3. Prediction Interface
             gr.Markdown("### 📂 Select Test Image")
@@ -170,14 +173,26 @@ def setup_events(app, components, all_components):
         labels = json.loads(model_info['labels']) if isinstance(model_info['labels'], str) else model_info['labels']
         metrics = json.loads(model_info['metrics']) if isinstance(model_info['metrics'], str) else model_info['metrics']
         
-        # Format class labels
-        label_str = ', '.join([f"{k}: {v}" for k, v in labels.items()]) if isinstance(labels, dict) else str(labels)
+        # Format class labels - each on new line
+        label_str = '\n'.join([f"{k}: {v}" for k, v in labels.items()]) if isinstance(labels, dict) else str(labels)
         
        # Calculate score percentage for the progress bar (0 to 100)
         # Calculate score percentage (0-100)
         score_pct = model_info.get('primary_score', 0) * 100
         # Colors remain the same for the bar, as they pop well on black
         score_color = "#34d399" if score_pct > 80 else "#fbbf24" if score_pct > 50 else "#f87171"
+        
+        # Format trained date to human-readable
+        trained_at_raw = model_info.get('trained_at', 'N/A')
+        if trained_at_raw != 'N/A':
+            try:
+                # Parse ISO format datetime
+                dt = datetime.fromisoformat(trained_at_raw.replace('Z', '+00:00'))
+                trained_at_formatted = dt.strftime('%b %d, %Y %I:%M %p')
+            except:
+                trained_at_formatted = trained_at_raw
+        else:
+            trained_at_formatted = 'N/A'
 
         html = f"""
         <style>
@@ -266,16 +281,15 @@ def setup_events(app, components, all_components):
             }}
             
             .classes-box {{
-                margin-top: 8px; 
                 background: #111827; /* Very dark box for classes */
                 padding: 8px;
                 border: 1px solid #374151;
                 border-radius: 6px; 
                 font-size: 0.8rem; 
                 color: #9ca3af;
-                white-space: nowrap; 
-                overflow: hidden; 
-                text-overflow: ellipsis;
+                white-space: pre-line; 
+                max-height: 150px;
+                overflow-y: auto;
             }}
         </style>
 
@@ -306,12 +320,10 @@ def setup_events(app, components, all_components):
                     </div>
 
                     <div class="data-row">
-                        <span class="data-label">Total Classes</span>
+                        <span class="data-label">🏷️ Total Classes</span>
                         <span class="data-value">{len(labels)}</span>
                     </div>
-                    <div class="classes-box" title="{label_str}">
-                    🏷️ {label_str}
-                    </div>
+                    <div class="classes-box" title="{label_str}">{label_str}</div>
                 </div>
 
                 <div class="info-card">
@@ -326,7 +338,7 @@ def setup_events(app, components, all_components):
                     </div>
                     <div class="data-row">
                         <span class="data-label">Trained Date</span>
-                        <span class="data-value">{model_info.get('trained_at', 'N/A')}</span>
+                        <span class="data-value">{trained_at_formatted}</span>
                     </div>
                     <div style="margin-top:10px; font-size:0.75rem; color:#6b7280;">
                         ID: {model_info.get('cvat_project_id', 'N/A')} <br>

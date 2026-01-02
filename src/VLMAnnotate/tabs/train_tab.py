@@ -18,30 +18,31 @@ def create_tab(app):
                 interactive=True
             )
             with gr.Row():
-                format_dropdown = gr.Dropdown(
-                    label="Choose Format",
-                    choices=["Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0","Ultralytics YOLO Classification 1.0"],
-                    value="Ultralytics YOLO Detection 1.0",
-                    interactive=True
-                )
-                
-                model_dropdown = gr.Dropdown(
-                        choices=app.get_pretrained_models("Ultralytics YOLO Detection 1.0"),
-                        label="Select Pre-trained Model",
+                with gr.Column():
+                    format_dropdown = gr.Dropdown(
+                        label="Choose Format",
+                        choices=["Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0","Ultralytics YOLO Classification 1.0"],
+                        value="Ultralytics YOLO Detection 1.0",
                         interactive=True
                     )
                     
-            with gr.Row():
-                    model_name_input = gr.Textbox(
-                        label="Model Name (Optional)",
-                        placeholder="Leave empty for auto-generated name",
-                        value=""
-                    )
-                    model_version_input = gr.Textbox(
-                        label="Version (Optional)",
-                        placeholder="Leave empty for auto-increment (v1, v2, ...)",
-                        value=""
-                    )
+                    model_dropdown = gr.Dropdown(
+                            choices=app.get_pretrained_models("Ultralytics YOLO Detection 1.0"),
+                            label="Select Pre-trained Model",
+                            interactive=True
+                        )
+                    
+                with gr.Column():
+                        model_name_input = gr.Textbox(
+                            label="Model Name (Optional)",
+                            placeholder="Leave empty for auto-generated name",
+                            value=""
+                        )
+                        model_version_input = gr.Textbox(
+                            label="Version (Optional)",
+                            placeholder="Leave empty for auto-increment (v1, v2, ...)",
+                            value=""
+                        )
                 
             train_config_checkbox = gr.Checkbox(
                 value=False,
@@ -118,6 +119,7 @@ def create_tab(app):
 
             train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg", elem_id="btn")
             
+            gr.HTML("<div style='margin: 20px 0;'></div>")
             
             dataset_log = gr.Textbox(
                 label="Dataset Detail Log", 

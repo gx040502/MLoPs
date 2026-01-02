@@ -15,7 +15,7 @@ def create_tab(app):
                     value=getattr(app, 'current_dataset', None) or "None",
                     interactive=False
                 )
-             
+                gr.HTML("<div style='margin: 20px 0;'></div>")
                 with gr.Column(scale=1):
                     gr.Markdown("### 🖼️ Dataset Gallery")
                     vlm_gallery = gr.Gallery(
