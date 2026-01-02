@@ -1695,14 +1695,10 @@ class APP():
         output_dir = Path(self.datasets_dir).parent / '.output' / f"{self.selected_dataset}_coco" 
         output_dir.mkdir(parents=True, exist_ok=True)
         
-        initial_categories = None 
+        # Start with empty categories for all formats
+        # Categories will be created dynamically based on detected labels
+        initial_categories = []
         category_map = {}
-        
-        if inference_format == "Classification":
-            initial_categories = []
-        else:
-            initial_categories = [{"id": 1, "name": "object", "supercategory": ""}]
-            category_map["object"] = 1
             
         coco_builder = COCODatasetBuilder(
                         base_dir=output_dir.as_posix(),
@@ -1743,35 +1739,30 @@ class APP():
                 xywh = [int(xyxy[0]), int(xyxy[1]), int(xyxy[2] - xyxy[0]), int(xyxy[3] - xyxy[1])]
 
 
-                # Determine Category ID
-                cat_id = 1
-                cat_name = "object"
+                # Determine Category ID - Dynamic for all formats
+                label_name = det.get('label', 'unknown')
                 
-                if inference_format == "Classification":
-                    label_name = det.get('label', 'unknown')
+                # Skip empty labels
+                if not label_name or label_name.strip() == '':
+                    print(f"⚠️ Skipping annotation for empty label")
+                    continue
+                # Skip annotations with combined labels (e.g., "bear cat")
+                if ' ' in label_name:
+                    print(f"⚠️ Skipping annotation for combined label: '{label_name}' - image will have no tag")
+                    continue
+                # Check if category already exists4
+                if label_name in category_map:
+                    cat_id = category_map[label_name]
+                else:
+                    # Create new category on the fly
+                    # Find next available ID (max of existing values or 0) + 1
+                    existing_ids = category_map.values()
+                    next_id = max(existing_ids) + 1 if existing_ids else 1
                     
-                    # Skip empty labels
-                    if not label_name or label_name.strip() == '':
-                        print(f"⚠️ Skipping annotation for empty label - image will have no tag")
-                        continue
-                    
-                    # Skip annotations with combined labels (e.g., "bear cat")
-                    if ' ' in label_name:
-                        print(f"⚠️ Skipping annotation for combined label: '{label_name}' - image will have no tag")
-                        continue
-                    
-                    if label_name in category_map:
-                        cat_id = category_map[label_name]
-                    else:
-                        # Create new category on the fly
-                        # Find next available ID (max of existing values or 0) + 1
-                        existing_ids = category_map.values()
-                        next_id = max(existing_ids) + 1 if existing_ids else 1
-                        
-                        coco_builder.add_category(next_id, label_name)
-                        category_map[label_name] = next_id
-                        cat_id = next_id
-                        print(f"Created new category: {label_name} (ID: {cat_id})")
+                    coco_builder.add_category(next_id, label_name)
+                    category_map[label_name] = next_id
+                    cat_id = next_id
+                    print(f"✨ Created new category: {label_name} (ID: {cat_id})")
 
                 coco_builder.add_annotation(
                     img_id=img_id,
@@ -2353,12 +2344,59 @@ class APP():
                         except Exception as e:
                             print(f"    ⚠️ Warning: Tag annotation failed: {e}")
                     
+                    
                     # Cleanup temp file
                     temp_coco_file.unlink()
                     
                     task_url = f"{url.rstrip('/')}/tasks/{task_data.id}"
                     task_urls.append((subset_name, task_data.id, task_url))
                     print(f"  ✅ Task complete: {task_url}")
+                
+                # Update task subsets based on subset names
+                print("\n🔄 Updating task subsets based on names...")
+                
+                # Refresh the project to get the newly created tasks
+                paginated_data, response_info = client.api_client.tasks_api.list(project_id=int(project_id))
+                tasks = paginated_data.results
+                
+                # Iterate through every task in the project
+                for task in tasks:
+                    # Get the subset name from the task
+                    subset_name = task.subset
+                    
+                    if not subset_name:
+                        print(f"   ⚠️ Skipping task '{task.name}' (No subset assigned)")
+                        continue
+                    
+                    current_subset = None
+                    
+                    # Check which keyword is in the subset name
+                    subset_lower = subset_name.lower()
+                    if "train" in subset_lower:
+                        current_subset = "Train"
+                    elif "val" in subset_lower or "valid" in subset_lower:
+                        current_subset = "Validation"
+                    elif "test" in subset_lower:
+                        current_subset = "Test"
+                    
+                    # If we found a match and it's different from current, update
+                    if current_subset and current_subset != subset_name:
+                        print(f"   👉 Found task '{task.name}' with subset '{subset_name}'. Setting to '{current_subset}'")
+                        
+                        # Use Low-Level API for the patch
+                        client.api_client.tasks_api.partial_update(
+                            id=task.id,
+                            patched_task_write_request=models.PatchedTaskWriteRequest(
+                                subset=current_subset
+                            )
+                        )
+                    elif current_subset:
+                        print(f"   ✓ Task '{task.name}' already has correct subset: '{current_subset}'")
+                    else:
+                        print(f"   ⚠️ Skipping task '{task.name}' (No matching subset keyword found)")
+                
+                print("✅ Task subsets updated successfully.")
+                
                 
                 # Cleanup output directory
                 print("\n🧹 Cleaning up temporary files...")
@@ -2442,28 +2480,38 @@ class APP():
             
             if is_classification:
                 # --- CLASSIFICATION FORMAT ---
-                # CVAT exports are already split: train/, val/, test/
-                # Just copy the structure as-is
+                # CVAT exports may have capitalized folders: Train/, Validation/, Test/
+                # But YOLO classification expects lowercase: train/, val/, test/
+                
+                # Check for both capitalized and lowercase versions
                 src_train_dir = temp_extract_dir / "train"
                 src_val_dir = temp_extract_dir / "val"
                 src_test_dir = temp_extract_dir / "test"
                 
-                if not src_train_dir.exists():
-                    return False, "Error: 'train' directory not found for Classification format."
+                # If capitalized versions exist, use them instead
+                if not src_train_dir.exists() and (temp_extract_dir / "Train").exists():
+                    src_train_dir = temp_extract_dir / "Train"
+                if not src_val_dir.exists() and (temp_extract_dir / "Validation").exists():
+                    src_val_dir = temp_extract_dir / "Validation"
+                if not src_test_dir.exists() and (temp_extract_dir / "Test").exists():
+                    src_test_dir = temp_extract_dir / "Test"
                 
-                # Copy pre-split directories
+                if not src_train_dir.exists():
+                    return False, "Error: 'train' or 'Train' directory not found for Classification format."
+                
+                # Copy pre-split directories with lowercase names
                 print("Copying pre-split classification structure...")
                 shutil.copytree(src_train_dir, temp_build_dir / "train")
                 
                 if src_val_dir.exists():
                     shutil.copytree(src_val_dir, temp_build_dir / "val")
                 else:
-                    print("Warning: 'val' directory not found")
+                    print("Warning: 'val' or 'Validation' directory not found")
                     
                 if src_test_dir.exists():
                     shutil.copytree(src_test_dir, temp_build_dir / "test")
                 else:
-                    print("Warning: 'test' directory not found")
+                    print("Warning: 'test' or 'Test' directory not found")
                 
                 # No data.yaml needed for Classification - YOLOv8 infers classes from folder structure
                 
@@ -2570,13 +2618,14 @@ class APP():
         return f"✅ Downloaded & Formatted Successfully!\\nPath: {formatted_zip_path}", str(formatted_zip_path)
 
     
-    def upload_to_cvat(self, zip_file_path, dataset_format):
+    def upload_to_cvat(self, zip_file_path, dataset_format, progress=None):
         """
         Upload a dataset zip file to CVAT by creating a project and importing the dataset.
         
         Args:
             zip_file_path: Path to the uploaded zip file
             dataset_format: Format string from dropdown ("Detection", "Segmentation", "Classification")
+            progress: Optional Gradio Progress object for tracking upload progress
             
         Returns:
             tuple: (success: bool, message: str)
@@ -2589,14 +2638,18 @@ class APP():
         organization="PixeVision"
         
         try:
-            # Step 1: Flatten the zip file
+            # Step 1: Flatten the zip file (0-25%)
+            if progress:
+                progress(0.0, desc="📦 Extracting and flattening dataset...")
             dataset_name = Path(zip_file_path).stem
             temp_dir = Path(self.datasets_dir) / f"temp_{dataset_name}"
             
             print(f"📦 Extracting and flattening {dataset_name}...")
             self.extract_and_flatten_zip(zip_file_path, str(temp_dir))
             
-            # Step 2: Re-zip the flattened structure
+            # Step 2: Re-zip the flattened structure (25-50%)
+            if progress:
+                progress(0.25, desc="📁 Creating zip archive...")
             flattened_zip = Path(self.datasets_dir) / f"{dataset_name}_flattened.zip"
             shutil.make_archive(str(flattened_zip.with_suffix('')), 'zip', str(temp_dir))
             
@@ -2604,7 +2657,9 @@ class APP():
             if temp_dir.exists():
                 shutil.rmtree(temp_dir)
             
-            # Step 3: Get CVAT credentials
+            # Step 3: Get CVAT credentials (50-60%)
+            if progress:
+                progress(0.50, desc="🔗 Connecting to CVAT...")
             url = self.config.get("cvat_url")
             username = self.config.get("cvat_username")
             password = self.config.get("cvat_password")
@@ -2619,7 +2674,9 @@ class APP():
             print(f"🔗 Connecting to CVAT at {host}...")
             
             with make_client(host, credentials=(username, password)) as client:
-                # Create project
+                # Create project (60%)
+                if progress:
+                    progress(0.60, desc="📁 Creating CVAT project...")
                 print(f"📁 Creating CVAT project: {dataset_name} (Org: {organization if organization else 'Personal'})...")
                 project_spec = models.ProjectWriteRequest(
                     name=dataset_name,
@@ -2656,13 +2713,65 @@ class APP():
                 # 2. Retrieve high-level Project object to use import_dataset helper
                 project = client.projects.retrieve(int(project_id))
                 
-                # Import dataset using project-level method
+                # Import dataset using project-level method (70-100%)
+                if progress:
+                    progress(0.70, desc="📥 Uploading dataset to CVAT...")
                 print(f"📥 Importing dataset with format: {cvat_format}...")
                 project.import_dataset(
                     format_name=cvat_format,
                     filename=str(flattened_zip)
                 )
                 
+                # Update task subsets based on task names (85-95%)
+                if progress:
+                    progress(0.85, desc="🔄 Updating task subsets...")
+                print("🔄 Updating task subsets based on names...")
+                
+                # Refresh the project to get the newly created tasks
+                paginated_data, response_info = client.api_client.tasks_api.list(project_id=int(project_id))
+                tasks=paginated_data.results
+                
+                # Iterate through every task in the project
+                for task in tasks:
+                    # Convert task name to lowercase for easy matching
+                    subset_name = task.subset
+                    
+                    current_subset = None
+                    
+                    # Check which keyword is inside the task name
+                    if "train" in subset_name:
+                        current_subset = "Train"
+                    elif "val" in subset_name or "valid" in subset_name:
+                        current_subset = "Validation"
+                    elif "test" in subset_name:
+                        current_subset = "Test"
+                    
+                    # If we found a match, update the task on the server
+                    if current_subset:
+                        print(f"   👉 Found task '{task.name}'. Setting subset to '{current_subset}'")
+                        
+                        # Use Low-Level API for the patch (most reliable)
+                        if organization:
+                            client.api_client.tasks_api.partial_update(
+                                id=task.id,
+                                patched_task_write_request=models.PatchedTaskWriteRequest(
+                                    subset=current_subset
+                                )
+                            )
+                        else:
+                            client.api_client.tasks_api.partial_update(
+                                id=task.id,
+                                patched_task_write_request=models.PatchedTaskWriteRequest(
+                                    subset=current_subset
+                                )
+                            )
+                    else:
+                        print(f"   ⚠️ Skipping task '{task.name}' (No matching subset keyword found)")
+                
+                print("✅ Task subsets updated successfully.")
+                
+                if progress:
+                    progress(1.0, desc="✅ Upload complete!")
                 print(f"✅ Successfully uploaded to CVAT project: {dataset_name} (ID: {project_id})")
             
             # Clean up flattened zip

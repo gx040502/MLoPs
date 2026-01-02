@@ -60,6 +60,14 @@ def create_tab(app):
                     annotate_btn = gr.Button("📂 Annotate", variant="primary", elem_id="btn", visible=True, interactive=False)
                     upload_cvat_btn = gr.Button("📤 Upload to CVAT", variant="primary", size="lg", elem_id="btn",visible=False)
                 
+                upload_cvat_progress = gr.Textbox(
+                    label="Upload Progress",
+                    value="",
+                    interactive=False,
+                    visible=False,
+                    lines=1
+                )
+                
                 upload_cvat_status = gr.Markdown(visible=False)
 
             # Video Frame Extraction Configuration
@@ -91,6 +99,7 @@ def create_tab(app):
         "checkbox_formatted": checkbox_formatted,
         "dataset_format_dropdown": dataset_format_dropdown,
         "upload_cvat_btn": upload_cvat_btn,
+        "upload_cvat_progress": upload_cvat_progress,
         "upload_cvat_status": upload_cvat_status,
         "current_dataset_state": current_dataset_state,
         "click_instruction": click_instruction
@@ -123,13 +132,25 @@ def setup_events(app, components, all_components):
             )
 
     
+    
     def upload_cvat_handler(zip_file, dataset_format):
-        """Handle CVAT upload button click"""
+        """Handle CVAT upload button click with progress updates"""
         if not zip_file:
-            return "❌ Please upload a zip file first"
+            yield gr.update(visible=True, value="❌ Please upload a zip file first"), gr.update(visible=False)
+            return
         
-        success, message = app.upload_to_cvat(zip_file, dataset_format)
-        return message
+        # Show progress component - upload is starting
+        yield gr.update(visible=True, value="📦 Uploading to CVAT... Please wait."), gr.update(visible=False)
+        
+        # Call the upload function (this will block until complete)
+        # The progress parameter is still used for console logging
+        success, message = app.upload_to_cvat(zip_file, dataset_format, progress=lambda p, desc="": None)
+        
+        # Hide progress, show final status
+        yield gr.update(visible=False, value=""), gr.update(visible=True, value=message)
+    
+    
+    
     
     # Internal logic functions
     def on_zip_changed(zip_file, state):
@@ -279,7 +300,7 @@ def setup_events(app, components, all_components):
     c["upload_cvat_btn"].click(
         fn=upload_cvat_handler,
         inputs=[c["zip_file_formatted"], c["dataset_format_dropdown"]],
-        outputs=[c["upload_cvat_status"]]
+        outputs=[c["upload_cvat_progress"], c["upload_cvat_status"]]
     )
     
     
