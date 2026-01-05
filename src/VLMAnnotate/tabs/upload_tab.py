@@ -131,8 +131,6 @@ def setup_events(app, components, all_components):
                 gr.update(visible=False)    # video_config_group (hide initially)
             )
 
-    
-    
     def upload_cvat_handler(zip_file, dataset_format):
         """Handle CVAT upload button click with progress updates"""
         if not zip_file:
@@ -148,10 +146,7 @@ def setup_events(app, components, all_components):
         
         # Hide progress, show final status
         yield gr.update(visible=False, value=""), gr.update(visible=True, value=message)
-    
-    
-    
-    
+
     # Internal logic functions
     def on_zip_changed(zip_file, state):
         """

@@ -126,15 +126,6 @@ def create_tab(app):
 def setup_events(app, components, all_components):
     c = components
     
-    # Internal logic
-    def refresh_vlm_dropdown(): 
-        """Refresh dataset list and return update"""
-        all_datasets = app.get_all_datasets()
-        choices = [d["name"] for d in all_datasets]
-        # Keep currently selected value if valid, or just current app selection
-        val = getattr(app, 'current_dataset', None)
-        return gr.update(choices=choices, value=val)
-    
     def refresh_cvat_dropdown():
         """Refresh CVAT projects dropdown after inference"""
         projects = app.get_cvat_projects()
@@ -143,36 +134,6 @@ def setup_events(app, components, all_components):
             gr.Button(visible=True),   # Show CVAT button
             gr.Dropdown(visible=True, choices=projects, interactive=True)  # Show and refresh dropdown
         ]
-
-
-    def on_vlm_dataset_select(dataset_name): 
-        if not dataset_name: return gr.update(visible=False), None
-                
-        # Always select the dataset so that subsequent components (gallery, image input) 
-        # can access the correct path via app.selected_dataset
-        app.select_dataset(dataset_name)
-
-        video_files = app.scan_for_videos(dataset_name)
-        has_videos = len(video_files) > 0
-        if has_videos:
-            df_data = [[v["Video Name"], v["Duration"]] for v in video_files]
-            return gr.update(visible=True), df_data
-        else:
-            return gr.update(visible=False), None
-
-    def on_vlm_process_click(dataset_name, video_df, interval_val): 
-        success, result = app.extract_frames_from_dataset(
-            dataset_name, video_df, interval_val=interval_val
-        )
-                
-        # Refresh dropdown choices as new temp dataset is created
-        all_datasets = app.get_all_datasets()
-        choices = [d["name"] for d in all_datasets]
-                
-        # If success, result is temp_name which is already selected in app
-        new_val = result if success else dataset_name
-                
-        return gr.update(visible=False), gr.update(choices=choices, value=new_val)
 
     def on_gallery_select(evt: gr.SelectData): 
         return evt.value["image"]["path"]

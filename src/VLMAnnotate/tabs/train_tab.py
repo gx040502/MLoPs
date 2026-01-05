@@ -287,7 +287,18 @@ def setup_events(app, components, all_components):
         }
         return app.preview_augmentation(images, **aug_args)
 
+    def refresh_cvat_projects():
+        """Refresh CVAT projects dropdown when tab is selected"""
+        projects = app.get_cvat_projects()
+        current_value = projects[0][1] if projects else None
+        return gr.update(choices=projects, value=current_value)
+    
     # --- Event Handlers ---
+    c["tab"].select(
+        fn=refresh_cvat_projects,
+        outputs=[c["cvat_projects_dropdown"]]
+    )
+    
     c["format_dropdown"].change(
         fn=on_format_change,
         inputs=[c["format_dropdown"]],

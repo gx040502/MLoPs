@@ -21,7 +21,7 @@ from types import SimpleNamespace
 from modelDatabase import ModelRegistry
 
 from .utils import COCODatasetBuilder, GroundingDINODetector
-from .utils import COCODatasetBuilder, GroundingDINODetector
+from src.ModelManager.utils import extract_and_flatten_zip, upload_dataset_by_zip
 from ultralytics import YOLO, SAM
 
 class APP():
@@ -32,7 +32,6 @@ class APP():
             with open(self.json_path, 'r') as config_file:
                 self.config = json.load(config_file)
                 self.datasets_dir = self.config.get("datasets_dir", ".gradio")
-                self.html = self.create_dataset_html()
                 self.selected_dataset = ''
                 self.selected_dataset_1st_img_path = ""
 
@@ -46,6 +45,64 @@ class APP():
             self.config = {}
             self.datasets_dir = ".gradio"
             self.train_root_dir = Path("/home/intern/Gitlab/pipeline/1.Train")
+    
+    def get_all_datasets(self, name=None):
+        # A list of datasets from the configuration, each element is a dict with 'name' and 'path'
+        return self.config.get("datasets", [])
+
+    def get_all_own_datasets(self, name=None):
+        # A list of user-uploaded formatted datasets from the configuration
+        return self.config.get("own_datasets", [])
+
+    def get_dataset_by_name(self, name):
+        """
+        Retrieves a single dataset's details by its name.
+        """
+        dataset = next((d for d in self.config.get("datasets", []) if d["name"] == name), None)
+        if dataset: return True, dataset
+        return False, f"Dataset '{name}' not found."    
+    
+    def remove_dataset(self, name):
+        """
+        Removes a dataset from the configuration and also deletes its directory from the file system.
+        """
+        datasets = self.config.get("datasets", [])
+        success, dataset_to_remove = self.get_dataset_by_name(name)
+        
+        if not success:
+            return False, f"Dataset '{name}' not found."
+
+        # Attempt to remove the directory
+        dataset_path = dataset_to_remove.get("path")
+        if dataset_path and os.path.exists(dataset_path):
+            message = f"Attempting to delete directory: {dataset_path}"
+            try:
+                shutil.rmtree(dataset_path)
+                message = f"Successfully deleted directory: {dataset_path}"
+            except OSError as e:
+                message = f"Error deleting directory {dataset_path}: {e}"
+                return False, message
+        else:
+            message = f"Directory for '{name}' not found on disk, only removing from configuration."
+            
+        # Remove the dataset from the configuration list
+        self.config["datasets"] = [d for d in datasets if d.get("name") != name]
+        self.save_config()
+
+        return True, f"Dataset '{name}' removed from configuration successfully."
+
+    def save_config(self):
+        """
+        Saves the current configuration dictionary to the settings.json file.
+        """
+        try:
+            # Open the file in write mode ('w') and write the dictionary as JSON
+            with open(self.json_path, 'w') as config_file:
+                json.dump(self.config, config_file, indent=4)
+
+            
+        except Exception as e:
+            print(f"An error occurred while saving the configuration: {e}")
 
     def select_dataset(self, name):
         
@@ -66,91 +123,31 @@ class APP():
             msg = f"Path: {dataset.get('path', 'N/A')}"
             return True, msg
         return False, f"Dataset '{name}' not found."
+    
+    # -------------------------------------------------------------------------
+    #                         ZIPFILE LOGIC
+    # -------------------------------------------------------------------------
+    def extract_and_flatten_zip(self, zip_path, extract_to):
+        """
+        Wrapper method that calls the utility function.
+        Kept for backward compatibility.
+        """
+        return extract_and_flatten_zip(zip_path, extract_to)
 
+    def upload_dataset_by_zip(self, zip_file_path):
+        """
+        Wrapper method that calls the utility function.
+        Kept for backward compatibility.
+        """
+        return upload_dataset_by_zip(
+            zip_file_path,
+            self.datasets_dir,
+            self.config,
+            self.save_config
+        )
     # -------------------------------------------------------------------------
     #                         PREDICT MODEL LOGIC
     # -------------------------------------------------------------------------
-     
-    def extract_and_flatten_zip(self, zip_path, extract_to):
-        """
-        Intelligently extract zip and flatten if it contains only one root directory.
-        
-        This fixes the common issue where users zip a folder (abc.zip contains abc/)
-        instead of zipping the folder contents directly.
-        
-        Args:
-            zip_path: Path to zip file
-            extract_to: Directory to extract to
-        """
-        import zipfile
-        
-        # First, extract to a temporary location
-        temp_extract = Path(extract_to).parent / f"temp_{Path(extract_to).name}"
-        temp_extract.mkdir(parents=True, exist_ok=True)
-        
-        try:
-            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                zip_ref.extractall(temp_extract)
-            
-            # Check if there's only one root directory
-            root_items = list(temp_extract.iterdir())
-            
-            if len(root_items) == 1 and root_items[0].is_dir():
-                # Single root directory - flatten by moving its contents up
-                single_root = root_items[0]
-                print(f"🔄 Flattening nested structure: {single_root.name}/")
-                
-                # Move contents from nested folder to final destination
-                if Path(extract_to).exists():
-                    shutil.rmtree(extract_to)
-                shutil.move(str(single_root), str(extract_to))
-            else:
-                # Multiple root items or root is not a directory - use as is
-                if Path(extract_to).exists():
-                    shutil.rmtree(extract_to)
-                shutil.move(str(temp_extract), str(extract_to))
-                
-        finally:
-            # Clean up temp directory if it still exists
-            if temp_extract.exists():
-                shutil.rmtree(temp_extract)
-    
-    def list_trained_projects(self):
-        """
-        Scans the 1.Train directory for project folders.
-        Returns a list of project names.
-        """
-        if not self.train_root_dir.exists():
-            return []
-        
-        projects = []
-        for item in self.train_root_dir.iterdir():
-            if item.is_dir():
-                projects.append(item.name)
-        return sorted(projects)
-
-    def list_trained_models(self, project_name):
-        """
-        Scans 1.Train/<project_name> for run directories that contain weights/best.pt.
-        Returns a list of model names (run names).
-        """
-        if not project_name:
-            return []
-            
-        project_dir = self.train_root_dir / project_name
-        if not project_dir.exists():
-            return []
-            
-        models_list = []
-        for run_dir in project_dir.iterdir():
-            if run_dir.is_dir():
-                # Check for weights/best.pt
-                best_pt = run_dir / "weights" / "best.pt"
-                if best_pt.exists():
-                    models_list.append(run_dir.name)
-        
-        return sorted(models_list)
-
     def get_test_images(self, project_name):
         """
         Returns a list of image paths from Dataset/{project_name}/images/Test or test
@@ -305,195 +302,11 @@ class APP():
             import traceback
             traceback.print_exc()
             return image, f"Error: {str(e)}"
-    def predict_with_model(self, project_name, model_name, image, conf_threshold, iou_threshold):
-        """
-        Runs YOLO inference on the image using the selected model.
-        Supports both detection/segmentation and classification models.
-        """
-        if image is None:
-            return None, "Please upload an image."
-        
-        if not project_name or not model_name:
-            return image, "Please select a Project and Model."
-            
-        model_path = self.train_root_dir / project_name / model_name / "weights" / "best.pt"
-        if not model_path.exists():
-            return image, f"Model not found at {model_path}"
-            
-        try:
-            # Detect model type by checking if model_name contains "-cls"
-            is_classification = "-cls" in model_name.lower()
-            
-            # Load model
-            model = YOLO(model_path)
-            
-            # Run inference based on model type
-            if is_classification:
-                # Classification: No conf/iou parameters
-                print(f"Running classification prediction on model: {model_name}")
-                results = model.predict(image, device=0, verbose=False)
-                
-                # For classification, get top-1 prediction
-                if results and len(results) > 0:
-                    probs = results[0].probs
-                    top1_idx = probs.top1
-                    top1_conf = float(probs.top1conf)
-                    label = model.names[top1_idx]
-                    
-                    # Create a simple visualization with the label
-                    output_image = image.copy()
-                    from PIL import ImageDraw, ImageFont
-                    draw = ImageDraw.Draw(output_image)
-                    
-                    # Draw label on image
-                    text = f"{label}: {top1_conf:.3f}"
-                    try:
-                        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 30)
-                    except:
-                        font = ImageFont.load_default()
-                    
-                    # Draw text with background
-                    bbox = draw.textbbox((0, 0), text, font=font)
-                    text_width = bbox[2] - bbox[0]
-                    text_height = bbox[3] - bbox[1]
-                    
-                    # Position at top-left
-                    x, y = 10, 10
-                    draw.rectangle([x, y, x + text_width + 10, y + text_height + 10], fill=(0, 255, 0))
-                    draw.text((x + 5, y + 5), text, fill=(0, 0, 0), font=font)
-                    
-                    # Format detailed output
-                    json_results = {
-                        "model_type": "classification",
-                        "predicted_class": label,
-                        "confidence": top1_conf,
-                        "top5_predictions": [
-                            {"class": model.names[i], "confidence": float(probs.data[i])}
-                            for i in probs.top5
-                        ]
-                    }
-                    
-                    return output_image, json.dumps(json_results, indent=2)
-                else:
-                    return image, "No classification results"
-                    
-            else:
-                # Detection/Segmentation: Use conf and iou parameters
-                print(f"Running detection/segmentation prediction on model: {model_name}")
-                results = model.predict(image, conf=conf_threshold, iou=iou_threshold, device=0, verbose=False)
-                
-                # Plot results on the image (returns numpy array in BGR)
-                res_plotted = results[0].plot() 
-                output_image = Image.fromarray(cv2.cvtColor(res_plotted, cv2.COLOR_BGR2RGB))
-                
-                # Format detailed output
-                details = []
-                for box in results[0].boxes:
-                    cls_id = int(box.cls[0])
-                    label = model.names[cls_id]
-                    score = float(box.conf[0])
-                    details.append(f"{label}: {score:.3f}")
-                    
-                json_results = {
-                    "model_type": "detection/segmentation",
-                    "detections_count": len(results[0].boxes),
-                    "detections": details
-                }
-                
-                return output_image, json.dumps(json_results, indent=2)
-            
-        except Exception as e:
-            print(f"Prediction error: {e}")
-            import traceback
-            traceback.print_exc()
-            return image, f"Error: {e}"
+
+    # -------------------------------------------------------------------------
+    #                         PRETRAINED MODEL LOGIC
+    # -------------------------------------------------------------------------
     
-    def create_dataset_html(self):
-        """Create HTML representation of dataset buttons with scrollable container"""
-        datasets = self.get_all_datasets()
-        if not datasets:
-            return "<p style='text-align: center; color: #9a3412; font-style: italic;'>No datasets found in settings.json.</p>"
-        
-        # Create scrollable container that shows max 5 items
-        html = """
-        <div style='max-height: 400px; overflow-y: auto; border: 2px solid #fb923c; 
-                    border-radius: 12px; padding: 10px; background: linear-gradient(135deg, #000000 0%, #000000 100%);'>
-            <div style='display: flex; flex-direction: column; gap: 12px;'>
-        """
-        
-        for i, dataset in enumerate(datasets):
-            html += f"""
-            <div class='dataset-card' style='display: flex; justify-content: space-between; align-items: center; 
-                        padding: 15px; border: 2px solid #fb923c; border-radius: 12px; 
-                        background: linear-gradient(135deg, #000000 0%, #000000 100%);;
-                        box-shadow: 0 2px 8px rgba(234, 88, 12, 0.1);
-                        transition: all 0.3s ease;'
-                        onmouseover='this.style.transform="translateY(-2px)"; this.style.boxShadow="0 4px 12px rgba(234, 88, 12, 0.2)";'
-                        onmouseout='this.style.transform="translateY(0)"; this.style.boxShadow="0 2px 8px rgba(234, 88, 12, 0.1)";'>
-                <div style='flex-grow: 1;'>
-                    <div style='display: flex; align-items: center; margin-bottom: 8px;'>
-                        <span style='background: linear-gradient(135deg, #ea580c 0%, #dc2626 100%);
-                                    color: white; padding: 4px 8px; border-radius: 16px; 
-                                    font-size: 12px; font-weight: bold; margin-right: 10px;'>
-                            #{i+1}
-                        </span>
-                        <strong style='color: #9a3412; font-size: 16px;'>{dataset['name']}</strong>
-                    </div>
-                    <div style='color: #c2410c; font-size: 12px; line-height: 1.4;'>
-                        <div style='margin-bottom: 2px;'>
-                            📁 <strong>Path:</strong> {dataset.get('path', 'N/A')}
-                        </div>
-                    </div>
-                </div>
-                <div style='margin-left: 15px;'>
-                    <div style='width: 8px; height: 40px; background: linear-gradient(135deg, #fb923c 0%, #ea580c 100%); 
-                            border-radius: 4px; opacity: 0.6;'></div>
-                </div>
-            </div>
-            """
-        
-        html += """
-            </div>
-        </div>
-        """
-        
-        # Add info about scrolling if there are more than 5 datasets
-        if len(datasets) > 5:
-            html += f"""
-            <div style='text-align: center; margin-top: 10px; color: #c2410c; font-size: 12px; font-style: italic;'>
-                📜 Showing {len(datasets)} datasets - scroll to view all
-            </div>
-            """
-        
-        return html
-
-    def upload_dataset_by_zip(self, zip_file_path):
-
-        if zip_file_path is None:
-            return False, "No file was uploaded. Please upload a ZIP file."
-        
-        # Check if the uploaded file is a ZIP file
-        if not zipfile.is_zipfile(zip_file_path):
-            return False, "The uploaded file is not a valid ZIP file. Please upload a .zip archive."
-        
-        try:
-            project_name = zip_file_path.split('/')[-1].replace('.zip', '')
-            output_dir = os.path.join(self.datasets_dir, project_name)
-            
-            # Use smart extraction that auto-flattens nested structures
-            self.extract_and_flatten_zip(zip_file_path, output_dir)
-            
-
-            # Update the config with the new dataset
-            if "datasets" not in self.config:
-                self.config["datasets"] = []
-            self.config["datasets"].append({"name": project_name, "path": output_dir})
-            self.save_config()
-
-            return True, f"Successfully unzipped the file to '{output_dir}'.", project_name
-        except Exception as e:
-            return False, f"An error occurred while unzipping the file: {e}", None
-
     def get_pretrained_models(self, format_name=None):
         """
         Scans values in models/pre_trained/detection or segmentation for .pt files
@@ -617,53 +430,6 @@ class APP():
         
         return True, f"✅ Model '{model_name}' deleted successfully"
     
-    def get_own_model_details(self, model_name):
-        """
-        Load model and return metadata.
-        
-        Args:
-            model_name: str - Name of model
-            
-        Returns:
-            dict: Model details or error message
-        """
-        if not model_name:
-            return {"Status": "No model selected"}
-        
-        own_models = self.config.get("own_models", [])
-        model_entry = next((m for m in own_models if m.get("name") == model_name), None)
-        
-        if not model_entry:
-            return {"Error": "Model not found"}
-        
-        model_path = model_entry.get("path", "")
-        
-        if not os.path.exists(model_path):
-            return {"Error": "Model file not found"}
-        
-        try:
-            # Load YOLO model
-            model = YOLO(model_path)
-            
-            # Extract metadata
-            params = sum(p.numel() for p in model.model.parameters())
-            size_mb = os.path.getsize(model_path) / (1024 * 1024)
-            
-            # Get class names
-            classes = {}
-            if hasattr(model, 'names') and model.names:
-                classes = {str(k): v for k, v in model.names.items()}
-            
-            return {
-                "Model": model_name,
-                "Params": f"{params:,}",
-                "Size": f"{size_mb:.2f} MB",
-                "Classes": classes if classes else "N/A"
-            }
-            
-        except Exception as e:
-            return {"Error": f"Failed to load model: {e}"}
-    
     def predict_with_own_model(self, model_name, image, conf_threshold=0.25, iou_threshold=0.45):
         """
         Run prediction using custom model.
@@ -778,6 +544,9 @@ class APP():
             traceback.print_exc()
             return image, json.dumps({"error": str(e)}, indent=2)
 
+    # -------------------------------------------------------------------------
+    #                         TRAINING LOGIC
+    # -------------------------------------------------------------------------
     def get_random_sample_images(self, project_id, count=4):
         """
         Extracts up to 'count' random images from the CVAT project zip.
@@ -1262,68 +1031,101 @@ class APP():
         except Exception as e:
             return f"❌ Error invoking training: {e}"
         
-    def get_all_datasets(self, name=None):
-        # A list of datasets from the configuration, each element is a dict with 'name' and 'path'
-        return self.config.get("datasets", [])
-
-    def get_all_formatted_datasets(self, name=None):
-        # A list of datasets from the configuration, each element is a dict with 'name' and 'path'
-        return self.config.get("formatted_datasets", [])
-
-    def get_all_own_datasets(self, name=None):
-        # A list of user-uploaded formatted datasets from the configuration
-        return self.config.get("own_datasets", [])
-
-    def get_dataset_by_name(self, name):
-        """
-        Retrieves a single dataset's details by its name.
-        """
-        dataset = next((d for d in self.config.get("datasets", []) if d["name"] == name), None)
-        if dataset: return True, dataset
-        return False, f"Dataset '{name}' not found."    
-    
-    def remove_dataset(self, name):
-        """
-        Removes a dataset from the configuration and also deletes its directory from the file system.
-        """
-        datasets = self.config.get("datasets", [])
-        success, dataset_to_remove = self.get_dataset_by_name(name)
-        
-        if not success:
-            return False, f"Dataset '{name}' not found."
-
-        # Attempt to remove the directory
-        dataset_path = dataset_to_remove.get("path")
-        if dataset_path and os.path.exists(dataset_path):
-            message = f"Attempting to delete directory: {dataset_path}"
-            try:
-                shutil.rmtree(dataset_path)
-                message = f"Successfully deleted directory: {dataset_path}"
-            except OSError as e:
-                message = f"Error deleting directory {dataset_path}: {e}"
-                return False, message
+    def _sanitize_stats_for_json(self, data):
+        """Recursively ensure all dictionary keys are strings for JSON compatibility."""
+        if isinstance(data, dict):
+            return {str(k): self._sanitize_stats_for_json(v) for k, v in data.items()}
+        elif isinstance(data, list):
+            return [self._sanitize_stats_for_json(i) for i in data]
         else:
-            message = f"Directory for '{name}' not found on disk, only removing from configuration."
-            
-        # Remove the dataset from the configuration list
-        self.config["datasets"] = [d for d in datasets if d.get("name") != name]
-        self.save_config()
+            return data
 
-        return True, f"Dataset '{name}' removed from configuration successfully."
-
-    def save_config(self):
+    def inspect_dataset_zip(self, zip_path):
         """
-        Saves the current configuration dictionary to the settings.json file.
+        Inspect a local dataset zip file and return stats.
+        Supports both Detection/Segmentation and Classification formats.
         """
+        if not zip_path: return {"status": "Error", "message": "No path provided"}
+        
+        zip_path = Path(zip_path)
+        if not zip_path.exists():
+             return {"status": "Error", "message": f"File not found: {zip_path}"}
+             
+        # Extract to temp inspect folder
+        import time
+        import shutil
+        import zipfile
+        
+        temp_inspect_dir = Path(self.datasets_dir) / f"temp_inspect_{int(time.time())}_{random.randint(1000,9999)}"
+        
         try:
-            # Open the file in write mode ('w') and write the dictionary as JSON
-            with open(self.json_path, 'w') as config_file:
-                json.dump(self.config, config_file, indent=4)
-
+            temp_inspect_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Use smart extraction that auto-flattens nested structures
+            self.extract_and_flatten_zip(zip_path, temp_inspect_dir)
+                
+            # Detect format type
+            is_classification = (temp_inspect_dir / "train").exists() and (temp_inspect_dir / "train").is_dir()
+            
+            # Gather Stats
+            stats = {
+                "status": "Ready",
+                "zip_path": str(zip_path),
+                "images": {},
+                "labels": {},
+                "classes": 0,
+                "class_names": []
+            }
+            
+            if is_classification:
+                # Classification format: train/dog/, val/dog/, test/dog/
+                for subset in ["train", "val", "test"]:
+                    subset_dir = temp_inspect_dir / subset
+                    if subset_dir.exists():
+                        # Count images across all class folders
+                        img_count = 0
+                        class_folders = [d for d in subset_dir.iterdir() if d.is_dir()]
+                        
+                        for class_folder in class_folders:
+                            img_count += len([f for f in class_folder.iterdir() 
+                                            if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']])
+                        
+                        # Use capitalized names for consistency with UI
+                        subset_key = subset.capitalize() if subset != "val" else "Validation"
+                        stats["images"][subset_key] = img_count
+                        stats["labels"][subset_key] = 0  # Classification doesn't have separate label files
+                        
+                        # Get class names from first subset that exists
+                        if not stats["class_names"] and class_folders:
+                            stats["class_names"] = sorted([d.name for d in class_folders])
+                            stats["classes"] = len(stats["class_names"])
+            else:
+                # Detection/Segmentation format: images/Train/, labels/Train/
+                for subset in ["Train", "Validation", "Test"]:
+                    img_dir = temp_inspect_dir / "images" / subset
+                    lbl_dir = temp_inspect_dir / "labels" / subset
+                    stats["images"][subset] = len(list(img_dir.iterdir())) if img_dir.exists() else 0
+                    stats["labels"][subset] = len(list(lbl_dir.iterdir())) if lbl_dir.exists() else 0
+                    
+                yaml_path = temp_inspect_dir / "data.yaml"
+                if yaml_path.exists():
+                    with open(yaml_path, 'r') as f:
+                        import yaml
+                        data = yaml.safe_load(f)
+                        stats["classes"] = data.get('nc', 0)
+                        stats["class_names"] = data.get('names', [])
+            
+            # Apply robust sanitization before returning
+            return self._sanitize_stats_for_json(stats)
             
         except Exception as e:
-            print(f"An error occurred while saving the configuration: {e}")
-
+            print(f"Error inspecting zip: {e}")
+            return {"status": "Error", "message": str(e)}
+        finally:
+            if temp_inspect_dir.exists(): shutil.rmtree(temp_inspect_dir)
+    # -------------------------------------------------------------------------
+    #                         EXTRACT FRAMES FROM VIDEO LOGIC
+    # -------------------------------------------------------------------------
     def scan_for_videos(self, dataset_name):
         """
         Scans the dataset for video files and returns a list of dictionaries.
@@ -1367,25 +1169,6 @@ class APP():
                     print(f"Error reading video {file}: {e}")
                     
         return video_files
-
-    def parse_interval(self, interval_str):
-        """
-        Parses interval string like '1s', '10s', '1m', '0.5m', '100ms'.
-        Returns seconds as float.
-        """
-        interval_str = interval_str.strip().lower()
-        if interval_str.endswith('ms'):
-            return float(interval_str[:-2]) / 1000.0
-        elif interval_str.endswith('s'):
-            return float(interval_str[:-1])
-        elif interval_str.endswith('m'):
-            return float(interval_str[:-1]) * 60.0
-        else:
-            # Assume seconds if no unit
-            try:
-                return float(interval_str)
-            except ValueError:
-                return 1.0 # Default fallback
 
     def extract_frames_from_dataset(self, dataset_name, video_config_df, interval_val=1.0):
         """
@@ -1501,7 +1284,10 @@ class APP():
         self.select_dataset(temp_name)
 
         return True, zip_output_path
-
+    
+    # -------------------------------------------------------------------------
+    #                         INFERENCE DATASET LOGIC
+    # -------------------------------------------------------------------------
     def draw_bounding_boxes(self, image, detections, threshold=0.3):
         """
         Draw bounding boxes on the image with labels and confidence scores.
@@ -1855,7 +1641,9 @@ class APP():
             f"Inference completed on {len(imgs)} images.<br>Results saved to '<i>{output_dir}</i>'."
             f"</div>"
         )
-
+    # -------------------------------------------------------------------------
+    #                         CVAT LOGIC
+    # -------------------------------------------------------------------------
     def _get_cvat_client(self):
         """Helper to create and return a configured CVAT client context manager."""
         url = self.config.get("cvat_url")
@@ -1904,7 +1692,7 @@ class APP():
                 
                 # Fetch projects, filtered by organization if found
                 if org_id:
-                    projects, _ = client.projects_api.list(org_id=org_id)
+                    projects, _ = client.projects_api.list(org_id=org_id,page_size=100)
                 else:
                     projects, _ = client.projects_api.list()
                 
@@ -1913,283 +1701,6 @@ class APP():
         except Exception as e:
             print(f"Error fetching projects: {e}")
             return []
-
-    def get_cvat_tasks(self,project_id=None):
-        """Fetches list of tasks from CVAT. Returns list of (name, id) tuples."""
-        client, error = self._get_cvat_client()
-        if error:
-            print(error)
-            return []
-
-        try:
-            with client:
-                # tasks_api.list() returns (data, response_headers) tuple usually
-                # data is a list of TaskRead objects
-                list_kwargs = {}
-                if project_id is not None:
-                     list_kwargs['project_id'] = int(project_id)
-                
-                tasks, _ = client.tasks_api.list(**list_kwargs)
-                
-                # Format as [(Name (ID: X), X)] for Gradio dropdown
-                return [(f"{t.name} (ID: {t.id})", t.id) for t in tasks.results]
-        except Exception as e:
-            print(f"Error fetching tasks: {e}")
-            return []
-    
-
-    def create_cvat_task(self, project_id=None):
-        """
-        Create a CVAT task from the currently processed dataset using High-Level SDK.
-        """
-        url = self.config.get("cvat_url")
-        username = self.config.get("cvat_username")
-        password = self.config.get("cvat_password")
-        
-        if not all([url, username, password]):
-            return "❌ Error: Missing CVAT credentials."
-            
-        # Sanitize URL
-        url = url.split('/projects')[0].split('/tasks')[0].split('jobs')[0].rstrip('/')
-
-        dataset_name = self.selected_dataset
-        if not dataset_name:
-            return "❌ Error: No dataset selected."
-
-        # Locate the inference output directory
-        output_dir = Path(self.datasets_dir).parent / '.output' / f"{dataset_name}_coco"
-        images_dir = output_dir / "images" / "Train"
-        annotations_file = output_dir / "annotations" / "instances_Train.json"
-
-        if not images_dir.exists() or not annotations_file.exists():
-            return f"❌ Error: Inference output not found at {output_dir}. Please run 'Inference Dataset' first."
-
-        try:
-            # Use High-Level 'make_client'
-            with make_client(url, credentials=(username, password)) as client:
-                
-                # --- Label Synchronization (Added for Classification/Auto-Labeling) ---
-                if project_id and annotations_file.exists():
-                     try:
-                         # Read categories from generated COCO file
-                         with open(annotations_file, 'r') as f:
-                             coco_data = json.load(f)
-                         
-                         dataset_categories = {cat['name'] for cat in coco_data.get('categories', [])}
-                         
-                         if dataset_categories:
-                             print(f"Syncing categories to CVAT Project {project_id}: {dataset_categories}")
-                             
-                             # DEBUG: Check for 'dog' specifically
-                             if "dog" in str(coco_data):
-                                 print("⚠️ DEBUG: Found 'dog' in JSON file content!")
-                             else:
-                                 print("ℹ️ DEBUG: 'dog' NOT found in JSON file content.")
-                             
-                             # Retrieve project and existing labels
-                             project_proxy = client.projects.retrieve(int(project_id))
-                             current_labels = project_proxy.get_labels()
-                             existing_names = {l.name for l in current_labels}
-                             
-                             new_labels = []
-                             for cat_name in dataset_categories:
-                                 if cat_name not in existing_names:
-                                     print(f"  + Adding New Label to Project: {cat_name}")
-                                     new_labels.append(
-                                         models.PatchedLabelRequest(
-                                             name=cat_name, 
-                                             color="#ff0000", 
-                                             attributes=[]
-                                         )
-                                     )
-                             
-                             if new_labels:
-                                 # We must send ALL labels (existing + new) in a batch update
-                                 # CRITICAL: Include 'id' for existing labels, otherwise CVAT tries to recreate them -> Unique Error
-                                 updated_labels = [
-                                     models.PatchedLabelRequest(
-                                         id=l.id,
-                                         name=l.name, 
-                                         color=l.color, 
-                                         attributes=[
-                                             models.AttributeRequest(
-                                                 name=a.name,
-                                                 input_type=a.input_type,
-                                                 mutable=a.mutable,
-                                                 values=a.values
-                                             ) for a in l.attributes
-                                         ]
-                                     ) for l in current_labels
-                                 ]
-                                 updated_labels.extend(new_labels)
-                                 
-                                 project_proxy.update(models.PatchedProjectWriteRequest(labels=updated_labels))
-                                 print(f"✅ Successfully synced {len(new_labels)} new labels to project.")
-                     except Exception as e:
-                         print(f"⚠️ Warning: Label synchronization failed (Non-critical): {e}")
-
-                # Define task spec first
-                task_spec = {
-                    "name": f"{dataset_name}_vlm_annotation",
-                    "project_id": int(project_id) if project_id else None,
-                }
-
-                # Fetch project to get organization context if needed
-                if project_id:
-                    try:
-                        project = client.projects.retrieve(int(project_id))
-                        # project.organization usually returns the Organization ID (int)
-                        org_id = project.organization
-                        
-                        if org_id:
-                            print(f"Project belongs to Organization ID: {org_id}")
-                            # Fetch the exact slug which is needed for the context header
-                            org = client.organizations.retrieve(org_id)
-                            org_slug = org.slug
-                            print(f"Setting Client Context to Organization: {org_slug}")
-                            
-                            # Set the context for the client
-                            client.organization_slug = org_slug
-                            
-                            # Also update the spec with the slug/name just in case
-                            task_spec["organization"] = org_slug
-                            
-                    except Exception as e:
-                        print(f"Warning: Could not fetch project/organization details: {e}")
-
-                print(f"Creating CVAT task (High-Level): {task_spec['name']}...")
-                task = client.tasks.create(spec=task_spec)
-                
-                # Upload Data
-                print("Uploading images...")
-                image_files = [str(f) for f in images_dir.iterdir() if f.is_file()]
-                task.upload_data(image_files)
-
-                # Upload Annotations
-                print("Uploading annotations...")
-                task.import_annotations(
-                    format_name="COCO 1.0",
-                    filename=str(annotations_file)
-                )
-                
-                # --- Tag Annotation Logic (LabeledImage) ---
-                # Apply Classification tags to the frames
-                if annotations_file.exists():
-                     try:
-                         if 'coco_data' not in locals():
-                             with open(annotations_file, 'r') as f:
-                                 coco_data = json.load(f)
-                                 
-                         # Check Inference Format from Metadata
-                         inf_format = coco_data.get('info', {}).get('inference_format', 'Detection')
-                         print(f"DEBUG: Dataset Inference Format: {inf_format}")
-                         
-                         if inf_format == "Classification":
-                             print("Applying Tag Annotations (Classification)...")
-                             
-                             # 1. Retrieve Task Labels to get internal IDs
-                             # task = client.tasks.retrieve(task.id) # 'task' object is already returned by create
-                             task_labels = task.get_labels()
-                             label_name_to_id = {l.name: l.id for l in task_labels}
-                             
-                             # 2. Prepare mapping of Image Filename -> Frame Index
-                             if 'coco_data' not in locals():
-                                 with open(annotations_file, 'r') as f:
-                                     coco_data = json.load(f)
-                             
-                             images_list = coco_data.get('images', [])
-                             # Sort by file_name to match CVAT order
-                             sorted_images = sorted(images_list, key=lambda x: x['file_name'])
-                             
-                             image_id_to_frame = {}
-                             for idx, img_info in enumerate(sorted_images):
-                                 image_id_to_frame[img_info['id']] = idx
-                                 
-                             # 3. Create Tags from Annotations
-                             annotations = coco_data.get('annotations', [])
-                             categories = {c['id']: c['name'] for c in coco_data.get('categories', [])}
-                             
-                             tags_to_create = []
-                             
-                             for ann in annotations:
-                                 img_id = ann['image_id']
-                                 cat_id = ann['category_id']
-                                 
-                                 if img_id not in image_id_to_frame: continue
-                                 
-                                 frame_idx = image_id_to_frame[img_id]
-                                 cat_name = categories.get(cat_id)
-                                 
-                                 # Skip empty category names
-                                 if not cat_name or cat_name.strip() == '':
-                                     print(f"⚠️ Skipping CVAT tag for empty category name")
-                                     continue
-                                 
-                                 # Skip combined labels (e.g., "bear cat") for classification
-                                 if cat_name and ' ' in cat_name:
-                                     print(f"⚠️ Skipping CVAT tag for combined label: '{cat_name}'")
-                                     continue
-                                 
-                                 if cat_name and cat_name in label_name_to_id:
-                                     cvat_label_id = int(label_name_to_id[cat_name])
-                                     
-                                     # Simplify Request: Omit attributes/group if default
-                                     tag_annotation = models.LabeledImageRequest(
-                                         frame=int(frame_idx),
-                                         label_id=cvat_label_id
-                                     )
-                                     tags_to_create.append(tag_annotation)
-                             
-                             if tags_to_create:
-                                 # 4. Upload Tags to Job 0
-                                 jobs = task.get_jobs()
-                                 if jobs:
-                                     target_job = jobs[0]
-                                     
-                                     patch_request = models.PatchedLabeledDataRequest(
-                                         tags=tags_to_create
-                                     )
-                                     
-                                     
-                                     target_job.update_annotations(patch_request, action=SimpleNamespace(value="create"))
-                                     print(f"✅ Created {len(tags_to_create)} Tag Annotations on Job {target_job.id}.")
-                                 else:
-                                     print("⚠️ Warning: No jobs found for task. Skipping tags.")
-                             else:
-                                 print("ℹ️ No tags to create.")
-    
-                         else:
-                             print(f"ℹ️ Skipping Tag Annotation for format: {inf_format}")
-                             
-                     except Exception as e:
-                         print(f"⚠️ Warning: Tag Annotation failed: {e}")
-                         traceback.print_exc()
-                         
-                print(f"Task {task.name} (ID: {task.id}) created successfully.")
-                
-                task_url = f"{url.rstrip('/')}/tasks/{task.id}"
-                
-                # Cleanup output directory after successful upload
-                shutil.rmtree(output_dir, ignore_errors=True)
-                
-                # Also remove the generated zip file
-                zip_path = output_dir.with_suffix(".zip")
-                if zip_path.exists():
-                    zip_path.unlink()
-                
-                return (
-                    f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
-                    f"background: var(--input-background-fill); border-radius: var(--container-radius); "
-                    f"color: var(--body-text-color); min-height: 80px;'>"
-                    f"<strong>✅ CVAT Task Created Successfully! (High-Level)</strong><br><br>"
-                    f"<b>ID:</b> {task.id}<br>"
-                    f"<b>Name:</b> {task.name}<br>"
-                    f"<b>URL:</b> <a href='{task_url}' target='_blank' style='color: var(--link-text-color); text-decoration: underline;'>Open Task</a>"
-                    f"</div>"
-                )
-
-        except Exception as e:
-            return f"❌ Error creating CVAT task: {str(e)}"
     
     def create_cvat_project_with_tasks(self, project_name=None):
         """
@@ -2694,7 +2205,8 @@ class APP():
     
     def upload_to_cvat(self, zip_file_path, dataset_format, progress=None):
         """
-        Upload a dataset zip file to CVAT by creating a project and importing the dataset.
+        Upload a dataset zipfile that had already been formatted following a standard format to CVAT 
+        by creating a project and import the dataset to CVAT using CVAT API. 
         
         Args:
             zip_file_path: Path to the uploaded zip file
@@ -2884,98 +2396,7 @@ class APP():
         except Exception as e:
             print(f"Cleanup warning: {e}")
 
-    def _sanitize_stats_for_json(self, data):
-        """Recursively ensure all dictionary keys are strings for JSON compatibility."""
-        if isinstance(data, dict):
-            return {str(k): self._sanitize_stats_for_json(v) for k, v in data.items()}
-        elif isinstance(data, list):
-            return [self._sanitize_stats_for_json(i) for i in data]
-        else:
-            return data
 
-    def inspect_dataset_zip(self, zip_path):
-        """
-        Inspect a local dataset zip file and return stats.
-        Supports both Detection/Segmentation and Classification formats.
-        """
-        if not zip_path: return {"status": "Error", "message": "No path provided"}
-        
-        zip_path = Path(zip_path)
-        if not zip_path.exists():
-             return {"status": "Error", "message": f"File not found: {zip_path}"}
-             
-        # Extract to temp inspect folder
-        import time
-        import shutil
-        import zipfile
-        
-        temp_inspect_dir = Path(self.datasets_dir) / f"temp_inspect_{int(time.time())}_{random.randint(1000,9999)}"
-        
-        try:
-            temp_inspect_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Use smart extraction that auto-flattens nested structures
-            self.extract_and_flatten_zip(zip_path, temp_inspect_dir)
-                
-            # Detect format type
-            is_classification = (temp_inspect_dir / "train").exists() and (temp_inspect_dir / "train").is_dir()
-            
-            # Gather Stats
-            stats = {
-                "status": "Ready",
-                "zip_path": str(zip_path),
-                "images": {},
-                "labels": {},
-                "classes": 0,
-                "class_names": []
-            }
-            
-            if is_classification:
-                # Classification format: train/dog/, val/dog/, test/dog/
-                for subset in ["train", "val", "test"]:
-                    subset_dir = temp_inspect_dir / subset
-                    if subset_dir.exists():
-                        # Count images across all class folders
-                        img_count = 0
-                        class_folders = [d for d in subset_dir.iterdir() if d.is_dir()]
-                        
-                        for class_folder in class_folders:
-                            img_count += len([f for f in class_folder.iterdir() 
-                                            if f.is_file() and f.suffix.lower() in ['.jpg', '.jpeg', '.png', '.bmp']])
-                        
-                        # Use capitalized names for consistency with UI
-                        subset_key = subset.capitalize() if subset != "val" else "Validation"
-                        stats["images"][subset_key] = img_count
-                        stats["labels"][subset_key] = 0  # Classification doesn't have separate label files
-                        
-                        # Get class names from first subset that exists
-                        if not stats["class_names"] and class_folders:
-                            stats["class_names"] = sorted([d.name for d in class_folders])
-                            stats["classes"] = len(stats["class_names"])
-            else:
-                # Detection/Segmentation format: images/Train/, labels/Train/
-                for subset in ["Train", "Validation", "Test"]:
-                    img_dir = temp_inspect_dir / "images" / subset
-                    lbl_dir = temp_inspect_dir / "labels" / subset
-                    stats["images"][subset] = len(list(img_dir.iterdir())) if img_dir.exists() else 0
-                    stats["labels"][subset] = len(list(lbl_dir.iterdir())) if lbl_dir.exists() else 0
-                    
-                yaml_path = temp_inspect_dir / "data.yaml"
-                if yaml_path.exists():
-                    with open(yaml_path, 'r') as f:
-                        import yaml
-                        data = yaml.safe_load(f)
-                        stats["classes"] = data.get('nc', 0)
-                        stats["class_names"] = data.get('names', [])
-            
-            # Apply robust sanitization before returning
-            return self._sanitize_stats_for_json(stats)
-            
-        except Exception as e:
-            print(f"Error inspecting zip: {e}")
-            return {"status": "Error", "message": str(e)}
-        finally:
-            if temp_inspect_dir.exists(): shutil.rmtree(temp_inspect_dir)
 
 if __name__ == "__main__":
     # Load model into device: GPU or CPU

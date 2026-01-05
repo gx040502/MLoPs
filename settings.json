@@ -3,35 +3,12 @@
     "cvat_username": "gyapxun",
     "cvat_password": "mmcgtm2014",
     "datasets_dir": "./.gradio",
-    "datasets": [
+    "datasets": [],
+    "formatted_datasets": [],
+    "own_models": [
         {
-            "name": "one_animal",
-            "path": ".gradio/one_animal"
-        },
-        {
-            "name": "ALL",
-            "path": "./.gradio/ALL"
-        },
-        {
-            "name": "ALL",
-            "path": "./.gradio/ALL"
-        },
-        {
-            "name": "ALL",
-            "path": "./.gradio/ALL"
-        },
-        {
-            "name": "DEMO - Copy",
-            "path": "./.gradio/DEMO - Copy"
-        },
-        {
-            "name": "DEMO - Copy",
-            "path": "./.gradio/DEMO - Copy"
-        },
-        {
-            "name": "DEMO - Copy_temp_frames",
-            "path": "./.gradio/DEMO - Copy_temp_frames"
+            "name": "modelABC",
+            "path": ".gradio/own_models/modelABC.pt"
         }
-    ],
-    "formatted_datasets": []
+    ]
 }
