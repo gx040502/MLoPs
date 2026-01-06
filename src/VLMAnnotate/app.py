@@ -18,7 +18,7 @@ from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection
 from cvat_sdk import make_client
 from cvat_sdk.api_client import Configuration, ApiClient, models
 from types import SimpleNamespace
-from modelDatabase import ModelRegistry
+from ModelManager.DBmanager import DBManager
 
 from .utils import COCODatasetBuilder, GroundingDINODetector
 from src.ModelManager.utils import extract_and_flatten_zip, upload_dataset_by_zip

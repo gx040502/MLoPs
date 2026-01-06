@@ -2,7 +2,7 @@ import gradio as gr
 import json
 import os
 from ultralytics import YOLO
-from modelDatabase import ModelRegistry
+from ModelManager.DBmanager import DBManager
 from datetime import datetime
 from pathlib import Path
 from PIL import Image

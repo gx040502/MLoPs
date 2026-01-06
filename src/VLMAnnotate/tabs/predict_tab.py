@@ -1,6 +1,6 @@
 import gradio as gr
 import json
-from modelDatabase import ModelRegistry
+from ModelManager.DBmanager import DBManager
 from datetime import datetime
 from pathlib import Path
 from PIL import Image
