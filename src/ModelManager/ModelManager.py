@@ -8,14 +8,16 @@ from pathlib import Path
 from cvat_sdk import make_client
 from cvat_sdk.api_client import Configuration, ApiClient, models
 import yaml
-from DBmanager import DBManager
+from ultralytics import YOLO
+import numpy as np
 
+from DBmanager import DBManager
 from config import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
 CVAT_HOST = CVAT_HOST_IP + ":" + CVAT_HOST_PORT
 
 
 class ModelManager:
-    def __init__ (self, db_path: str = 'model_manager.db'):
+    def __init__ (self, db_path: str = 'database.db'):
         """Initialize the ModelManager with a database path."""
         self.db_manager = DBManager(db_path)
         # self.cvat_client = make_client(
@@ -66,7 +68,7 @@ class ModelManager:
             with make_client(CVAT_HOST, credentials=(CVAT_USER, CVAT_PASSWORD)) as client:
                 project = client.projects.retrieve(int(project_id))
                 project_name = f"{project.name}_{project_id}"
-                zip_path = Path('dataset') / f"{project_name}.zip"
+                zip_path = Path('datasets') / f"{project_name}.zip"
                 zip_path.parent.mkdir(parents=True, exist_ok=True)
                 if zip_path.exists(): zip_path.unlink() 
                 
@@ -83,7 +85,7 @@ class ModelManager:
 
 
         # --- PHASE 2: FORMAT ---
-        dataset_dir = Path('dataset') / f"{project_name}"
+        dataset_dir = Path('datasets') / f"{project_name}"
         
         try:
             with zipfile.ZipFile(zip_path, 'r') as zip_ref:
@@ -170,24 +172,148 @@ class ModelManager:
             for key, value in kwargs.items():
                 if key in known_args:
                     aug_params[key] = value
+
+    def get_models(self, cvat_project_id=None, name=None):
+        """Retrieve a list of models from the database."""
+        return self.db_manager.list_models(cvat_project_id=cvat_project_id, name=name)
+    
+    def get_datasets(self, cvat_project_id=None, name=None):
+        """Retrieve a list of datasets from the database."""
+        return self.db_manager.list_datasets(cvat_project_id=cvat_project_id, name=name)
+
+    def load_model(self, model_id: int) -> YOLO:
+        """Load a YOLO model from the database by model ID."""
+        model_record = self.db_manager.get_model(model_id)
+        if not model_record:
+            print(f"Model with ID {model_id} not found in database.")
+            return None
+        else:
+            model_path = model_record['storage_path']
+            return YOLO(model_path)
+    
+    def inference_image(self, image: np.ndarray, model: YOLO, conf: float, iou: float, verbose: bool = False) -> list:
+        try:
+            if model.task == "classify":
+                results = model.predict(image, device=0, verbose=verbose)
+
+                #Format classification results
+                result = results[0]
+                top5_indices = result.probs.top5
+                top5_conf = result.probs.top5conf.tolist()
+                
+                prediction_details = {
+                    "task": "classification",
+                    "top_predictions": []
+                }
+                
+                for idx, conf in zip(top5_indices, top5_conf):
+                    class_name = result.names[idx]
+                    prediction_details["top_predictions"].append({
+                        "class": class_name,
+                        "confidence": float(conf)
+                    })
+                
+                # Return annotated image (classification doesn't change image much, so maybe just original or top1 text)
+                # But YOLO plot() for classify just returns the image usually
+                start_time = time.time()
+                annotated_img = result.plot()
+                postprocess_time = (time.time() - start_time) * 1000
+                if verbose: print(f"Prediction done. Time: {postprocess_time:.2f}ms")
+                
+                return annotated_img, json.dumps(prediction_details, indent=2)
+            else:
+                # Detection/Segmentation
+                if verbose: print(f"Running detection/segmentation prediction on: {Path(model.model_name).name}")
+                start_time = time.time()
+                params = {"conf": conf, "iou": iou, "device": 0, "verbose": False}
+                results = model.predict(image, **params)
+                
+                res = results[0]
+                annotated_img = res.plot()
+                postprocess_time = (time.time() - start_time) * 1000
+                if verbose: print(f"Prediction done. Time: {postprocess_time:.2f}ms")
+                
+                # Format detection results
+                detections = []
+                for box in res.boxes:
+                    cls_id = int(box.cls[0])
+                    class_name = res.names[cls_id]
+                    conf = float(box.conf[0])
+                    xyxy = box.xyxy[0].tolist()
+                    detections.append({
+                        "class": class_name,
+                        "confidence": conf,
+                        "bbox": xyxy
+                    })
+                
+                return annotated_img, json.dumps(detections, indent=2)
+        except Exception as e:
+            print(f"Error during inference: {str(e)}")
+            return None, None
+
+    def inference_video(self, video_path: str, model: YOLO, conf: float, iou: float, verbose: bool = False):
+        """Perform inference on a video file using the specified model."""
+        try:
+            if verbose: print(f"Running video inference on: {Path(model.model_name).name}")
+            start_time = time.time()
+            params = {"conf": conf, "iou": iou, "device": 0, "verbose": False}
+            
+            # Define input and output paths (adjust as necessary)
+            input_path = video_path
+            output_path = 'output.mp4'
+            # Convert AVI to MP4
+            cap = cv2.VideoCapture(input_path)
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v') # Use 'mp4v' or 'XVID' codec
+            out = cv2.VideoWriter(output_path, fourcc, cap.get(cv2.CAP_PROP_FPS), 
+                                (int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)), int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))))
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                results = model.predict(frame, **params)
+                out.write(results[0].plot())
+            cap.release()
+            out.release()
+            print(f"Saved MP4 video to {output_path}")
+
+            postprocess_time = (time.time() - start_time) * 1000
+            if verbose: print(f"Video prediction done. Time: {postprocess_time:.2f}ms")
+            return results
+        except Exception as e:
+            print(f"Error during video inference: {str(e)}")
+            return None
         
         
 
-
-
-
+    
 if __name__ == "__main__":
     manager = ModelManager()
     print(len(manager.get_cvat_projects()))
-    download_result = manager.download_and_format_project(107, format_name="Ultralytics YOLO Detection 1.0")
-    print(download_result)
 
-    dataset_registry = DBManager('database.db')
-    dataset = dataset_registry.get_dataset_by_cvat_id(107)
-    dataset_path = dataset['storage_path']
-    print(dataset_path)
+    model = YOLO("/home/cy/projects/SEEAI/src/ModelManager/yolo11n.pt")
 
-    print(dataset)
-    dataset_list = dataset_registry.list_datasets()
-    print(dataset_list)
+    # model_id = manager.db_manager.register_model(
+    #     cvat_project_id=107,
+    #     name="test_model",
+    #     version="v1.0",
+    #     model= model
+    # )
+
+    # download_result = manager.download_and_format_project(107, format_name="Ultralytics YOLO Detection 1.0")
+    # print(download_result)
+
+    # dataset_registry = DBManager('database.db')
+    # dataset = dataset_registry.get_dataset_by_cvat_id(107)
+    # dataset_path = dataset['storage_path']
+    # print(dataset_path)
+
+    # print(dataset)
+    # dataset_list = dataset_registry.list_datasets()
+    # print(dataset_list)
+    import cv2
+    img = cv2.imread('/home/cy/projects/SEEAI/examples/weng_yeng.png')
+    video_path = '/home/cy/projects/SEEAI/examples/lentera_site.mp4'
+    result = manager.inference_video(video_path, model, conf=0.25, iou=0.45)
+
+    print(manager.get_models(cvat_project_id=107))
 

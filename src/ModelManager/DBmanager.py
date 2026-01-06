@@ -368,7 +368,7 @@ def test_dataset_crud():
     if os.path.exists(temp_db):
         os.remove(temp_db)
         
-    registry = ModelRegistry(db_path=temp_db)
+    registry = DBManager(db_path=temp_db)
     
     # 1. Test Create
     print("Testing create_dataset...")
