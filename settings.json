@@ -1,13 +1,14 @@
 {
+    "cvat_url": "http://100.110.21.83:8080",
+    "cvat_username": "gyapxun",
+    "cvat_password": "mmcgtm2014",
     "datasets_dir": "./.gradio",
-    "datasets": [
+    "datasets": [],
+    "formatted_datasets": [],
+    "own_models": [
         {
-            "name": "screenshot_app",
-            "path": "./.gradio/screenshot_app"
-        },
-        {
-            "name": "globe",
-            "path": "./.gradio/globe"
+            "name": "modelABC",
+            "path": ".gradio/own_models/modelABC.pt"
         }
     ]
 }
