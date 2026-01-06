@@ -46,11 +46,60 @@ def create_tab(app):
                 
             train_config_checkbox = gr.Checkbox(
                 value=False,
-                label="⚙️ Set Own Training Configuration"
+                label="⚙️ Set Own Training Configuration",
+                elem_classes="train-config-checkbox"
             )
 
-            with gr.Group(visible=False) as train_config_group:
-                gr.Markdown("### ⚙️ Training Configuration")
+            # Custom styling for Training Configuration section
+            gr.HTML("""
+                <style>
+                    /* Control checkbox spacing */
+                    .train-config-checkbox {
+                        margin-bottom: 0px !important;
+                    }
+                    /* Remove padding from HTML container wrapper */
+                    .html-container.svelte-phx28p {
+                        padding: 0 !important;
+                        margin: 0 !important;
+                    }
+                    /* Remove spacing from block containers */
+                    .block.svelte-1svsvh2 {
+                        margin-top: 0 !important;
+                        margin-bottom: 0 !important;
+                    }
+                    .training-config-container {
+                        background: linear-gradient(135deg, #1e3a8a10 0%, #3b82f615 100%) !important;
+                        border: 2px solid #3b82f6 !important;
+                        border-radius: 12px !important;
+                        padding: 10px !important;
+                        margin: 0 !important;
+                        box-shadow: 0 4px 6px rgba(59, 130, 246, 0.1) !important;
+                    }
+                    /* Override Gradio's default group padding */
+                    .training-config-container > .form {
+                        padding: 0 !important;
+                        gap: 10px !important;
+                    }
+                    /* Remove spacing from parent containers */
+                    .training-config-container {
+                        margin-top: 0 !important;
+                        margin-bottom: 0 !important;
+                    }
+                    .training-config-header {
+                        background: linear-gradient(90deg, #3b82f6, #6366f1);
+                        color: white;
+                        padding: 12px;
+                        border-radius: 12px;
+                        margin-bottom: 10px;
+                        font-weight: 600;
+                        font-size: 1.1em;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    }
+                </style>
+            """)
+
+            with gr.Group(visible=False, elem_classes="training-config-container") as train_config_group:
+                gr.HTML('<div class="training-config-header">⚙️ Training Configuration</div>')
                 with gr.Row():
                     experiments_slider = gr.Slider(
                         minimum=1, 
@@ -118,8 +167,18 @@ def create_tab(app):
                                 erasing = gr.Slider(0.0, 0.9, value=0.4, step=0.01, label="Erasing %")
 
             train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg", elem_id="btn")
-            
-            gr.HTML("<div style='margin: 20px 0;'></div>")
+            gr.HTML("""
+                <div style="text-align: center; margin: 15px 0;">
+                    <div style="
+                        height: 1px; 
+                        width: 100%;
+                        max-width: 100%;
+                        margin: 0 auto;
+                        background: linear-gradient(90deg, transparent, #6366f1, transparent); 
+                        box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);">
+                    </div>
+                </div>
+            """)
             
             dataset_log = gr.Textbox(
                 label="Dataset Detail Log", 

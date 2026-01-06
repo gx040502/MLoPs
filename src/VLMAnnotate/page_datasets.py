@@ -6,6 +6,12 @@ def load_dataset_interface(app_interface, app):
     # Custom CSS for the button
     gr.HTML("""
         <style>
+        .page-header {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 5px;
+        }
         #btn {
             background: linear-gradient(45deg, #11998e, #38ef7d);
             border: none;
@@ -44,20 +50,17 @@ def load_dataset_interface(app_interface, app):
     
     # --- Global State ---
     datasets_state = gr.State([])
-
     gr.Markdown(
         """
         <div class="page-header">
-            <h1>🗂️ Data Management Systemm</h1>
-            <p>Upload, manage, and organize your datasets</p>
+            <h1>🗂️ Data Management System</h1>
         </div>
-        """, 
-        elem_classes=["page-header"]
+        """
     )
     
     with gr.Tabs() as tabs:
         # Create tabs
-        upload_comps = upload_tab.create_tab(app)
+        # upload_comps = upload_tab.create_tab(app)  # Removed - now integrated into VLM tab
         vlm_comps = vlm_tab.create_tab(app)
         train_comps = train_tab.create_tab(app)
         predict_comps = predict_tab.create_tab(app)
@@ -68,7 +71,7 @@ def load_dataset_interface(app_interface, app):
     all_components = {
         "datasets_state": datasets_state, 
         "tabs": tabs,                     
-        "upload_tab": upload_comps,                 #ALL components from upload tab
+        # "upload_tab": upload_comps,  # Removed - now integrated into VLM tab
         "vlm_tab": vlm_comps,
         "train_tab": train_comps,
         "predict_tab": predict_comps,
@@ -77,7 +80,7 @@ def load_dataset_interface(app_interface, app):
     }
     
     # Setup events for each tab
-    upload_tab.setup_events(app, upload_comps, all_components)
+    # upload_tab.setup_events(app, upload_comps, all_components)  # Removed - handled by VLM tab
     vlm_tab.setup_events(app, vlm_comps, all_components)
     train_tab.setup_events(app, train_comps, all_components)
     predict_tab.setup_events(app, predict_comps, all_components)

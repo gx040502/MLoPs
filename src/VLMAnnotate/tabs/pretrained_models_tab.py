@@ -4,50 +4,68 @@ import os
 from ultralytics import YOLO
 from modelDatabase import ModelRegistry
 from datetime import datetime
+from pathlib import Path
+from PIL import Image
+import tempfile
 
 def create_tab(app):
     with gr.Tab("🤖 Pre-Trained Models") as tab:
         with gr.Column():
-            with gr.Accordion("➕ Add Custom Model", open=False):
-                with gr.Column():
-                    model_name_input = gr.Textbox(
-                        label="Model Name", 
-                        placeholder="e.g modelABC"
-                    )
+            
+            with gr.Row():
+                # Left Column: Add Custom Model
+                with gr.Column(scale=1):
+                    gr.Markdown("### ➕ Add Custom Model")
                     model_uploader = gr.File(
                         label="Upload .pt file",
                         file_types=[".pt"],
                         height=207
                     )
-                    upload_model_btn = gr.Button("📤 Upload Model", variant="primary", elem_id="btn")
-                    upload_model_status = gr.Markdown(
-                        label="Upload Status",
+                    model_name_input = gr.Textbox(
+                        label="Model Name", 
+                        placeholder="e.g modelABC"
                     )
-            with gr.Row():
+                    upload_model_status = gr.Markdown(
+                        value="",
+                        visible=True
+                    )
+                
+                # Right Column: Model Selection and Actions
                 with gr.Column(scale=1):
+                    gr.Markdown("### 📂 Select Model")
                     own_model_dropdown = gr.Dropdown(
                         label="Select Model",
                         choices=[],
                         interactive=True
                     )
-                    own_delete_btn = gr.Button("🗑️ Delete Model", elem_id="del_btn")
-                with gr.Column(scale=2):
-                    with gr.Accordion("📊 Model Details", open=False):
-                        own_model_details = gr.HTML(
-                            value="<p>Select a model to view details</p>"
-                        )
+                    with gr.Row():
+                        upload_model_btn = gr.Button("📤 Upload Model", variant="primary", elem_id="btn")
+                        own_delete_btn = gr.Button("🗑️ Delete Model", elem_id="del_btn", visible=False)
+            
+            # Model Details Accordion (spans full width below)
+            with gr.Accordion("📊 Model Details", open=False):
+                own_model_details = gr.HTML(
+                    value="<p>Select a model to view details</p>"
+                )
+
             
             # Spacer for visual separation
-            gr.HTML("<div style='margin: 20px 0;'></div>")
+            gr.HTML("""
+                <div
+                    style="margin: 15px 0; 
+                    height: 1px; 
+                    background: linear-gradient(90deg, transparent, #6366f1, transparent); 
+                    box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);">
+                </div>
+            """)
             
             with gr.Row():
                 with gr.Column():
                     gr.Markdown("### 🖼️ Run Prediction")
-                    own_input_img = gr.Image(
-                        label="Input Image", 
-                        type="pil",
-                        height=400,
-                        interactive=True
+                    own_input_img = gr.File(
+                        label="Input Image or Video", 
+                        file_types=["image", "video"],
+                        height=400
                     )
                     with gr.Row():
                         own_conf_slider = gr.Slider(
@@ -58,13 +76,15 @@ def create_tab(app):
                             minimum=0.01, maximum=1.0, value=0.45, step=0.01,
                             label="IOU Threshold"
                         )
-                    own_predict_btn = gr.Button("🚀 Predict Image", variant="primary", elem_id="btn")
+                    own_predict_btn = gr.Button("🚀 Predict", variant="primary", elem_id="btn")
 
                 
                 with gr.Column():
                     gr.Markdown("### 📊 Prediction Result")
-                    own_output_img = gr.Image(label="Prediction Result", type="pil", height=400)
-                    own_result_details = gr.Code(label="Detection Details", language="json", elem_id="detection_details_code", lines=10)
+                    own_output_preview = gr.Image(label="Prediction Preview", type="pil", height=400, visible=False)
+                    own_output_video = gr.Video(label="Prediction Result Video", height=400, visible=False)
+                    with gr.Accordion("📋 Detection Details", open=False):
+                        own_result_details = gr.Code(label="Detection Details", language="json", elem_id="detection_details_code", lines=10)
 
     return {
         "tab": tab,
@@ -79,7 +99,8 @@ def create_tab(app):
         "own_conf_slider": own_conf_slider,
         "own_iou_slider": own_iou_slider,
         "own_predict_btn": own_predict_btn,
-        "own_output_img": own_output_img,
+        "own_output_preview": own_output_preview,
+        "own_output_video": own_output_video,
         "own_result_details": own_result_details
     }
 
@@ -120,7 +141,7 @@ def setup_events(app, components, all_components):
     def display_model_details(model_name):
         """Display selected model details with rich HTML formatting"""
         if not model_name:
-            return "<p>Select a model to view details</p>"
+            return "<p>Select a model to view details</p>", gr.update(visible=False)
         
         try:
             # Get model path from config
@@ -128,12 +149,12 @@ def setup_events(app, components, all_components):
             model_entry = next((m for m in own_models if m.get("name") == model_name), None)
             
             if not model_entry:
-                return "<p>Model not found in configuration</p>"
+                return "<p>Model not found in configuration</p>", gr.update(visible=False)
             
             model_path = model_entry.get('path', '')
             
             if not model_path or not os.path.exists(model_path):
-                return "<p>Model file not found</p>"
+                return "<p>Model file not found</p>", gr.update(visible=False)
                 
             # Load model and get info
             model = YOLO(model_path)
@@ -296,24 +317,47 @@ def setup_events(app, components, all_components):
                 </div>
             </div>
             """
-            return html
+            return html, gr.update(visible=True)
             
         except Exception as e:
-            return f"<p>Error loading model details: {str(e)}</p>"
+            return f"<p>Error loading model details: {str(e)}</p>", gr.update(visible=False)
     
-    def predict_own_model(model_name, image, conf, iou):
-        """Run prediction with selected custom model"""
-        if not image:
-            return None, json.dumps({"error": "Please upload an image"}, indent=2)
+    def predict_own_model(model_name, input_file, conf, iou):
+        if not model_name or not input_file:
+            # Hide both outputs on error
+            return gr.update(visible=False), gr.update(visible=False), "Please select a model and upload media"
         
-        if not model_name:
-            return image, json.dumps({"error": "Please select a model"}, indent=2)
+        # Detect if video or image
+        file_ext = Path(input_file).suffix.lower()
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm']
         
-        output_img, details_json = app.predict_with_own_model(
-            model_name, image, conf, iou
-        )
+        try:
+            if file_ext in video_extensions:
+                # Process video
+                print(f"Processing video: {file_ext}")
+                output_path, frame_count = app.predict_video_with_own_model(
+                    model_name, input_file, conf, iou
+                )
+                details = f"Processed {frame_count} frames"
+                
+                # Show File, Hide Image
+                return gr.update(visible=False), gr.update(visible=True, value=output_path), details
+            else:
+                # Process image
+                print(f"Processing image: {file_ext}")
+                image = Image.open(input_file)
+    
+                output_img, details_json = app.predict_image_with_own_model(
+                    model_name, image, conf, iou
+                )
+                
+                # Show Image, Hide File (pass PIL image directly)
+                return gr.update(visible=True, value=output_img), gr.update(visible=False), details_json
         
-        return output_img, details_json
+        except Exception as e:
+             # Hide both on error
+             print(f"Prediction Error: {e}")
+             return gr.update(visible=False), gr.update(visible=False), f"Error: {str(e)}"
 
     # --- Event Handlers ---
     c["tab"].select(
@@ -332,7 +376,7 @@ def setup_events(app, components, all_components):
     c["own_model_dropdown"].change(
         fn=display_model_details,
         inputs=[c["own_model_dropdown"]],
-        outputs=[c["own_model_details"]]
+        outputs=[c["own_model_details"], c["own_delete_btn"]]
     )
     
     c["own_delete_btn"].click(
@@ -344,5 +388,9 @@ def setup_events(app, components, all_components):
     c["own_predict_btn"].click(
         fn=predict_own_model,
         inputs=[c["own_model_dropdown"], c["own_input_img"], c["own_conf_slider"], c["own_iou_slider"]],
-        outputs=[c["own_output_img"], c["own_result_details"]]
+        outputs=[
+            c["own_output_preview"], # Image component
+            c["own_output_video"],   # Video component
+            c["own_result_details"]
+        ]
     )

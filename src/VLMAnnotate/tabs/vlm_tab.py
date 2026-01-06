@@ -1,21 +1,34 @@
 import gradio as gr
 from src.VLMAnnotate.ui_logic import load_selected_img, get_dataset_images_for_gallery
+from src.VLMAnnotate.tabs.upload_tab import create_upload_components, setup_upload_events
 
 def create_tab(app):
     with gr.Tab("📝 VLM Annotation", id="vlm_tab") as tab:
-        # --- VLM Code Integration ---
-        gr.Markdown("## AI Agent to annotate data")
+        # ============================================================
+        # Upload Section (embedded from upload_tab)
+        # ============================================================
+        upload_components = create_upload_components(app)
+        
+        # Add separator
+        gr.HTML("""
+            <div style="text-align: center; margin: 20px 0;">
+                <div style="
+                    height: 1px; 
+                    width: 100%;
+                    max-width: 100%;
+                    margin: 0 auto;
+                    background: linear-gradient(90deg, transparent, #6366f1, transparent); 
+                    box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);">
+                </div>
+            </div>
+        """)
+        
+        # ============================================================
+        # VLM Annotation Section
+        # ============================================================
         
         with gr.Row():
             with gr.Column(scale=1):
-                # --- Dataset Info ---
-                gr.Markdown("### 🗂️ Current Dataset")
-                vlm_dataset_info = gr.Textbox(
-                    label="Active Dataset",
-                    value=getattr(app, 'current_dataset', None) or "None",
-                    interactive=False
-                )
-                gr.HTML("<div style='margin: 20px 0;'></div>")
                 with gr.Column(scale=1):
                     gr.Markdown("### 🖼️ Dataset Gallery")
                     vlm_gallery = gr.Gallery(
@@ -102,10 +115,9 @@ def create_tab(app):
                 detection_info = gr.Textbox(label="Detection Details", lines=10, show_copy_button=True, visible=False)
                 raw_output = gr.Textbox(label="Raw Results", lines=5, show_copy_button=True, visible=False)
 
-    return {
+    # Merge upload components with VLM components
+    components_dict = {
         "tab": tab,
-        "vlm_dataset_info": vlm_dataset_info,
-
         "vlm_gallery": vlm_gallery,
         "vlm_image_input": vlm_image_input,
         "vlm_text_input": vlm_text_input,
@@ -122,9 +134,17 @@ def create_tab(app):
         "detection_info": detection_info,
         "raw_output": raw_output
     }
+    
+    # Add upload components
+    components_dict.update(upload_components)
+    
+    return components_dict
 
 def setup_events(app, components, all_components):
     c = components
+    
+    # Set up upload event handlers
+    setup_upload_events(app, components, all_components)
     
     def refresh_cvat_dropdown():
         """Refresh CVAT projects dropdown after inference"""

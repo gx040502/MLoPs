@@ -2,6 +2,9 @@ import gradio as gr
 import json
 from modelDatabase import ModelRegistry
 from datetime import datetime
+from pathlib import Path
+from PIL import Image
+
 
 def create_tab(app):
     with gr.Tab("🎱 Predict Model") as tab:
@@ -71,7 +74,18 @@ def create_tab(app):
                     interactive=False
                 )
                 
-            gr.HTML("<div style='margin: 20px 0;'></div>")
+            gr.HTML("""
+                <div style="text-align: center; margin: 15px 0;">
+                    <div style="
+                        height: 1px; 
+                        width: 100%;
+                        max-width: 100%;
+                        margin: 0 auto;
+                        background: linear-gradient(90deg, transparent, #6366f1, transparent); 
+                        box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);">
+                    </div>
+                </div>
+            """)
 
             # 3. Prediction Interface
             gr.Markdown("### 📂 Select Test Image")
@@ -88,9 +102,9 @@ def create_tab(app):
             with gr.Row():
                 with gr.Column(scale=1):
                     gr.Markdown("### 🖼️ Run Prediction")
-                    input_img = gr.Image(
-                        label="Input Image", 
-                        type="pil",
+                    input_file = gr.File(
+                        label="Input Image or Video", 
+                        file_types=["image", "video"],
                         height=400
                     )
                         
@@ -109,7 +123,9 @@ def create_tab(app):
                 with gr.Column(scale=1):
                     gr.Markdown("### 📊 Prediction Result")
                     output_img = gr.Image(label="Prediction Result", type="pil", height=400)
-                    result_details = gr.Code(label="Detection Details", language="json", elem_id="detection_details_code", lines=10)
+                    output_video = gr.Video(label="Prediction Result Video", height=400, visible=False)
+                    with gr.Accordion("📋 Detection Details", open=False):
+                        result_details = gr.Code(label="", language="json", elem_id="detection_details_code", lines=10)
     
     return {
         "tab": tab,
@@ -120,11 +136,14 @@ def create_tab(app):
         "plots_group": plots_group,
         "model_plots_gallery": model_plots_gallery,
         "test_gallery": test_gallery,
-        "input_img": input_img,
+        "test_gallery": test_gallery,
+        "input_file": input_file,
+        "conf_slider": conf_slider,
         "conf_slider": conf_slider,
         "iou_slider": iou_slider,
         "predict_btn": predict_btn,
         "output_img": output_img,
+        "output_video": output_video,
         "result_details": result_details
     }
 
@@ -393,20 +412,41 @@ def setup_events(app, components, all_components):
             gr.update(visible=not is_classification)   # iou_slider
         )
 
-    def on_predict(model_id, img, conf, iou):
+    def on_predict(model_id, input_path, conf, iou):
         """Run prediction using selected model."""
-        if not model_id or not img:
-            return None, json.dumps({"error": "Please select a model and image"})
+        if not model_id or not input_path:
+            return gr.update(visible=False), gr.update(visible=False), json.dumps({"error": "Please select a model and upload media"})
         
         # Get model path from database
         registry = ModelRegistry('model_registry.db')
         model_info = registry.get_model(model_id)
         
         if not model_info:
-            return None, json.dumps({"error": "Model not found"})
+            return gr.update(visible=False), gr.update(visible=False), json.dumps({"error": "Model not found"})
+            
+        file_ext = Path(input_path).suffix.lower()
+        video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm']
         
-        # Use app's prediction function with model path
-        return app.predict_with_model_path(model_info['storage_path'], img, conf, iou)
+        try:
+            if file_ext in video_extensions:
+                # Video prediction
+                output_path, details = app.predict_video_with_model_path(
+                    model_info['storage_path'], input_path, conf, iou
+                )
+                if not output_path:
+                     return gr.update(visible=False), gr.update(visible=False), details
+                     
+                return gr.update(visible=False), gr.update(visible=True, value=output_path), details
+            else:
+                # Image prediction
+                image = Image.open(input_path)
+                output_image, details = app.predict_image_with_model_path(
+                    model_info['storage_path'], image, conf, iou
+                )
+                return gr.update(visible=True, value=output_image), gr.update(visible=False), details
+                
+        except Exception as e:
+            return gr.update(visible=False), gr.update(visible=False), json.dumps({"error": str(e)})
 
     def toggle_plots_visibility(checked):
         return gr.update(visible=checked)
@@ -435,13 +475,13 @@ def setup_events(app, components, all_components):
     
     c["predict_btn"].click(
         fn=on_predict,
-        inputs=[c["model_dropdown"], c["input_img"], c["conf_slider"], c["iou_slider"]],
-        outputs=[c["output_img"], c["result_details"]]
+        inputs=[c["model_dropdown"], c["input_file"], c["conf_slider"], c["iou_slider"]],
+        outputs=[c["output_img"], c["output_video"], c["result_details"]]
     )
     
     c["test_gallery"].select(
         fn=on_gallery_select,
-        outputs=[c["input_img"]]
+        outputs=[c["input_file"]]
     )
     
     c["show_plots_checkbox"].change(

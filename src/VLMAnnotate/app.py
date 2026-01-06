@@ -7,7 +7,7 @@ import zipfile
 import random
 import io
 from pathlib import Path
-
+import tempfile
 import torch
 import matplotlib
 import cv2
@@ -221,7 +221,7 @@ class APP():
         return [(path, label) for label, path in plots]
 
 
-    def predict_with_model_path(self, model_path_str, image, conf_threshold, iou_threshold):
+    def predict_image_with_model_path(self, model_path_str, image, conf_threshold, iou_threshold):
         """
         Runs YOLO inference using a direct model path.
         """
@@ -430,7 +430,7 @@ class APP():
         
         return True, f"✅ Model '{model_name}' deleted successfully"
     
-    def predict_with_own_model(self, model_name, image, conf_threshold=0.25, iou_threshold=0.45):
+    def predict_image_with_own_model(self, model_name, image, conf_threshold=0.25, iou_threshold=0.45):
         """
         Run prediction using custom model.
         
@@ -543,6 +543,134 @@ class APP():
             import traceback
             traceback.print_exc()
             return image, json.dumps({"error": str(e)}, indent=2)
+    def _predict_video_base(self, model, video_path, conf, iou):
+        """
+        Shared internal method to process video with a loaded YOLO model.
+        Returns: (output_path, details_json_string) or (None, error_json_string)
+        """
+        import cv2
+        import tempfile
+        
+        try:
+            # Open video
+            cap = cv2.VideoCapture(video_path)
+            if not cap.isOpened():
+                return None, json.dumps({"error": "Failed to open video"}, indent=2)
+            
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            
+            # Create temp output video (Use VP9/webm for browser compatibility)
+            output_path = Path(tempfile.mkdtemp()) / "prediction.webm"
+            
+            # Try VP9 codec first
+            fourcc = cv2.VideoWriter_fourcc(*'vp09') # VP9
+            out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+            
+            # Check if writer opened successfully
+            if not out.isOpened():
+                print("VP9 codec failed, trying VP80...")
+                fourcc = cv2.VideoWriter_fourcc(*'VP80') # Fallback to VP8
+                out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
+            
+            frame_count = 0
+            total_detections = 0
+            
+            print(f"Processing video: {total_frames} frames at {fps} FPS")
+            
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                    
+                # Run prediction
+                results = model.predict(
+                    frame,
+                    conf=conf,
+                    iou=iou,
+                    device=0,
+                    verbose=False
+                )
+                
+                # Draw predictions on frame
+                annotated_frame = results[0].plot()
+                
+                # Count detections
+                if hasattr(results[0], 'boxes'):
+                    total_detections += len(results[0].boxes)
+                
+                # Write frame
+                out.write(annotated_frame)
+                frame_count += 1
+                
+                if frame_count % 30 == 0:
+                    print(f"Processed {frame_count}/{total_frames} frames...")
+            
+            cap.release()
+            out.release()
+            
+            details = {
+                "task": "video_prediction",
+                "frames_processed": frame_count,
+                "total_detections": total_detections,
+                "fps": fps,
+                "resolution": f"{width}x{height}"
+            }
+            
+            return str(output_path), json.dumps(details, indent=2)
+            
+        except Exception as e:
+            print(f"Video prediction base error: {e}")
+            import traceback
+            traceback.print_exc()
+            return None, json.dumps({"error": str(e)}, indent=2)
+
+
+    def predict_video_with_model_path(self, model_path_str, video_path, conf, iou):
+        """
+        Process video using a direct model path (for Project Models tab).
+        """
+        if not video_path:
+            return None, json.dumps({"error": "Please upload a video"}, indent=2)
+            
+        model_path = Path(model_path_str)
+        if not model_path.exists():
+            return None, json.dumps({"error": f"Model file not found at {model_path}"}, indent=2)
+            
+        try:
+            model = YOLO(model_path)
+            return self._predict_video_base(model, video_path, conf, iou)
+        except Exception as e:
+            return None, json.dumps({"error": f"Failed to load model: {str(e)}"}, indent=2)
+
+
+    def predict_video_with_own_model(self, model_name, video_path, conf, iou):
+        """
+        Process video using a custom model name (for Pre-Trained Models tab).
+        """
+        if not video_path:
+            return None, json.dumps({"error": "Please upload a video"}, indent=2)
+        
+        if not model_name:
+            return None, json.dumps({"error": "Please select a model"}, indent=2)
+        
+        own_models = self.config.get("own_models", [])
+        model_entry = next((m for m in own_models if m.get("name") == model_name), None)
+        
+        if not model_entry:
+            return None, json.dumps({"error": "Model not found"}, indent=2)
+        
+        model_path = model_entry.get("path", "")
+        if not os.path.exists(model_path):
+             return None, json.dumps({"error": "Model file not found"}, indent=2)
+             
+        try:
+            model = YOLO(model_path)
+            return self._predict_video_base(model, video_path, conf, iou)
+        except Exception as e:
+            return None, json.dumps({"error": f"Failed to load model: {str(e)}"}, indent=2)
 
     # -------------------------------------------------------------------------
     #                         TRAINING LOGIC
@@ -1575,7 +1703,7 @@ class APP():
         # Save inference format to metadata
         coco_builder.coco_json['info']['inference_format'] = inference_format
         
-        imgs = [f for f in dataset_dir.iterdir() if f.suffix in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']]
+        imgs = [f for f in dataset_dir.iterdir() if f.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']]
 
         for img_path in imgs:
             img = Image.open(img_path).convert("RGB")
