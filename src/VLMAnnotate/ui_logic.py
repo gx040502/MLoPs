@@ -43,24 +43,3 @@ def get_dataset_images_for_gallery(app):
         if f.lower().endswith(valid_ext):
             images.append(os.path.join(path, f))
     return images
-
-def navigate_to_train_with_dataset(app, selected_dataset_name): 
-    """Navigate to Train tab with pre-selected formatted dataset"""
-    # Validate that the selected dataset actually exists in the formatted options
-    own_datasets = app.get_all_own_datasets()
-    valid_choices = [d["name"] for d in own_datasets]
-    
-    final_val = selected_dataset_name
-    if selected_dataset_name not in valid_choices:
-        print(f"⚠️ Dataset {selected_dataset_name} not found in valid choices. Defaulting to first option.")
-        final_val = valid_choices[0] if valid_choices else None
-
-    return (
-        gr.update(selected="train_tab"),
-        True,  # Check use_formatted_checkbox
-        final_val,  # Pre-select in dropdown (validated)
-        gr.update(visible=False),  # Hide cvat_tasks_dropdown
-        gr.update(visible=False),  # Hide train_btn
-        gr.update(visible=True),   # Show formatted_dataset_group
-        gr.update(visible=True)    # Show train_own_btn
-    )

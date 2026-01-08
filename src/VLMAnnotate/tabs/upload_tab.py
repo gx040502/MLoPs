@@ -1,5 +1,5 @@
 import gradio as gr
-from src.VLMAnnotate.ui_logic import refresh_datasets_state, navigate_to_train_with_dataset
+from src.VLMAnnotate.ui_logic import refresh_datasets_state
 from src.VLMAnnotate.ui_logic import load_selected_img, get_dataset_images_for_gallery
 def create_upload_components(app):
     """
@@ -139,13 +139,11 @@ def setup_upload_events(app, components, all_components):
         yield gr.update(visible=False, value=""), gr.update(visible=True, value=message)
 
     # Internal logic functions
-    def on_zip_changed(zip_file, state):
+    def on_zip_changed(zip_file, state, is_formatted):
         """
-        Triggered when a raw zip file is uploaded.
-        1. Uploads dataset (flattening logic included).
-        2. Scans for videos.
-        3. If NO videos: Auto-select dataset and update VLM tab
-        4. If HAS videos: Show video config, wait for user to process
+        Triggered when a zip file is uploaded.
+        - If is_formatted=False (raw upload): Process normally
+        - If is_formatted=True (CVAT upload): Skip processing, just return waiting state
         """
         if not zip_file:
             return (
@@ -156,7 +154,47 @@ def setup_upload_events(app, components, all_components):
                 None,         # vlm_image_input
                 []            # vlm_gallery
             )
+        
+        # If formatted dataset (for CVAT), skip raw dataset processing
+        if is_formatted:
+            return (
+                "📦 Formatted dataset ready for CVAT upload",
+                gr.update(visible=False),
+                gr.update(value=None),
+                state,
+                None,
+                []
+            )
             
+        # First, quick scan to check for videos before registering dataset
+        import tempfile
+        import zipfile
+        from pathlib import Path
+        
+        temp_check_dir = Path(tempfile.mkdtemp(prefix="video_check_"))
+        project_name = Path(zip_file).stem
+        
+        try:
+            # Quick extract to check for videos
+            with zipfile.ZipFile(zip_file, 'r') as zip_ref:
+                zip_ref.extractall(temp_check_dir)
+            
+            # Scan for videos in temp location
+            video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.wmv']
+            video_files_found = []
+            for video_path in temp_check_dir.rglob('*'):
+                if video_path.suffix.lower() in video_extensions:
+                    video_files_found.append(video_path)
+            
+            has_videos = len(video_files_found) > 0
+            
+        finally:
+            # Clean up temp check directory
+            import shutil
+            if temp_check_dir.exists():
+                shutil.rmtree(temp_check_dir, ignore_errors=True)
+        
+        # Now register the dataset
         success, message, project_name = app.upload_dataset_by_zip(zip_file)
         
         if not success:
@@ -169,26 +207,20 @@ def setup_upload_events(app, components, all_components):
                 []
             )
             
-        # Scan for videos
+        # Update state
         state = state or {}
         state["zip_path"] = zip_file
         state["dataset_name"] = project_name
-        
-        video_files = app.scan_for_videos(project_name)
-        has_videos = len(video_files) > 0
         state["has_videos"] = has_videos
-        
-        df_data = None
-        video_visible = False
         
         if has_videos:
             # Has videos - show config, don't auto-select yet
+            video_files = app.scan_for_videos(project_name)
             df_data = [[v["Video Name"], v["Duration"]] for v in video_files]
-            video_visible = True
             
             return (
                 f"✅ Ready: {project_name}\n(Videos detected - configure and process)",
-                gr.update(visible=video_visible),
+                gr.update(visible=True),
                 gr.update(value=df_data),
                 state,
                 None,
@@ -227,18 +259,21 @@ def setup_upload_events(app, components, all_components):
         # Extract frames
         success, result = app.extract_frames_from_dataset(
             dataset_name, 
-            video_df, 
+            video_df,
             interval_val
         )
-        
+
         if success:
             temp_dataset_name = f"{dataset_name}_temp_frames"
             app.select_dataset(temp_dataset_name)
-            
+
+            # Clean up the original video dataset (no longer needed)
+            app.remove_dataset(dataset_name)
+
             # Load image and gallery
             img = load_selected_img(app)
             gallery_imgs = get_dataset_images_for_gallery(app)
-            
+
             return (
                 f"✅ Dataset selected: {temp_dataset_name}",
                 img,
@@ -255,7 +290,7 @@ def setup_upload_events(app, components, all_components):
     # 1. Zip Upload Handler
     c["zip_file_input"].change(
         fn=on_zip_changed,
-        inputs=[c["zip_file_input"], c["current_dataset_state"]],
+        inputs=[c["zip_file_input"], c["current_dataset_state"], c["checkbox_formatted"]],
         outputs=[
              c["click_instruction"],     # Status/Instruction
              c["video_config_group"],    # Visibility

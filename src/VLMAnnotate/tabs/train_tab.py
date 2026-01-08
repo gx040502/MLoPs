@@ -1,13 +1,15 @@
 import gradio as gr
+from src.ModelManager.ModelManager import ModelManager
 
 def create_tab(app):
+    model_manager = ModelManager("database.db")
     with gr.Tab("🧠 Train Model", id="train_tab") as tab:
         gr.Markdown("## Train New Model")
         gr.Markdown("Train a new model from your CVAT Project")
         
         with gr.Column():
             # Get initial CVAT projects and select first one
-            cvat_projects_initial = app.get_cvat_projects()
+            cvat_projects_initial = model_manager.get_cvat_projects()
             cvat_initial_value = cvat_projects_initial[0][1] if cvat_projects_initial else None
             
             cvat_projects_dropdown = gr.Dropdown(
@@ -27,7 +29,7 @@ def create_tab(app):
                     )
                     
                     model_dropdown = gr.Dropdown(
-                            choices=app.get_pretrained_models("Ultralytics YOLO Detection 1.0"),
+                            choices=app.get_format_pretrained_models("Ultralytics YOLO Detection 1.0"),
                             label="Select Pre-trained Model",
                             interactive=True
                         )
@@ -237,10 +239,11 @@ def create_tab(app):
 
 def setup_events(app, components, all_components):
     c = components
+    model_manager = ModelManager("database.db")
     
     # Internal logic
     def on_format_change(format_val):   
-        models = app.get_pretrained_models(format_val)
+        models = app.get_format_pretrained_models(format_val)
         return gr.update(choices=models, value=models[0] if models else None)
         
     def toggle_aug_settings(checkbox_val): 
@@ -252,19 +255,29 @@ def setup_events(app, components, all_components):
                                      persp, f_ud, f_lr, 
                                      mos, mix, cut, cp, 
                                      ers): 
-        # 1. Format/Prepare Data
-        msg, path = app.process_cvat_project(project_id, custom_name, format_name=format_name)
-        if "Error" in msg:
-            yield msg, "❌ Format Failed", None
-            return
+        
+        # Initialize ModelManager
+        manager = ModelManager()
 
-        # Inspect Dataset Stats
+        # 1. Format/Prepare Data
+        # Call Download and Format from Model Manager
+        success, res = manager.download_and_format_project(project_id, format_name=format_name, custom_name=custom_name)
+        
+        if not success:
+            msg = res # Error message from manager
+            yield f"❌ Format Failed: {msg}", "❌ Format Failed", None
+            return
+            
+        path = res # This is a Path object to the dataset directory
+        msg = f"✅ Dataset prepared at {path}"
+
+        # Inspect Dataset Stats (app.inspect_dataset_zip now supports directory path)
         stats = app.inspect_dataset_zip(path)
         
         stats_str = "📊 Dataset Stats:\n"
         if stats.get("status") != "Error":
-            stats_str += f"Valid Images: {stats['images']}\n"
-            stats_str += f"Classes ({stats['classes']}): {stats['class_names']}\n"
+            stats_str += f"Valid Images: {stats.get('images', 'N/A')}\n"
+            stats_str += f"Classes ({stats.get('classes', 0)}): {stats.get('class_names', [])}\n"
         else:
             stats_str += f"Error inspecting stats: {stats.get('message')}\n"
                         
@@ -281,6 +294,7 @@ def setup_events(app, components, all_components):
                     
         # 3. Start Training
         project_name = ""
+        # Determine project name for status checking (using the logic we just used for download)
         if custom_name and custom_name.strip():
             s_name = custom_name.strip()
             if s_name.lower().endswith('.zip'): 
@@ -289,11 +303,33 @@ def setup_events(app, components, all_components):
                 project_name = s_name
         else:
             clean_id = str(project_id).split(':')[0].strip()
-            project_name = f"Project_{clean_id}"
+            project_name = f"Project_{clean_id}" # Fallback if we don't have exact name, but manager handles it.
+            # Ideally we get project name from manager result if possible, but manager returns path.
+            # Path.name should be the project name.
+            if path and hasattr(path, 'name'):
+                 project_name = path.name
                         
         yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name
-                    
-        result = app.start_training(path, model, epochs, imgsz, manual_aug, project_id, model_name, model_version, format_name=format_name, **aug_args)
+        
+        # Call Train Model from Model Manager
+        success_train, msg_train = manager.train_model(
+            project_id=project_id, 
+            model_name=model, 
+            epochs=epochs, 
+            imgsz=imgsz, 
+            manual_aug=manual_aug, 
+            cvat_project_id=project_id, 
+            db_model_name=model_name, 
+            db_model_version=model_version, 
+            format_name=format_name, 
+            **aug_args
+        )
+
+        if success_train:
+             result = f"✅ {msg_train}"
+        else:
+             result = f"❌ {msg_train}"
+
         yield result, stats_str, None
         
     def check_training_status(project_name): 
@@ -303,7 +339,8 @@ def setup_events(app, components, all_components):
         import json
 
         # Direct path to the status file
-        status_path = Path("Dataset") / project_name / "training_status.json"
+        # ModelManager uses 'datasets' directory
+        status_path = Path("datasets") / project_name / "training_status.json"
                     
         if not status_path.exists():
             return gr.update(value=f"⏳ Estimated Time: Initializing... (Waiting for {project_name})", visible=True)
@@ -348,7 +385,7 @@ def setup_events(app, components, all_components):
 
     def refresh_cvat_projects():
         """Refresh CVAT projects dropdown when tab is selected"""
-        projects = app.get_cvat_projects()
+        projects = model_manager.get_cvat_projects()
         current_value = projects[0][1] if projects else None
         return gr.update(choices=projects, value=current_value)
     

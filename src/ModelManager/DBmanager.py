@@ -212,6 +212,7 @@ class DBManager:
         query = """
             SELECT cvat_project_id, COUNT(*) as model_count
             FROM models
+            WHERE cvat_project_id != -1
             GROUP BY cvat_project_id
             ORDER BY cvat_project_id
         """
@@ -359,6 +360,24 @@ class DBManager:
                 cursor = conn.cursor()
                 cursor.execute(query, (dataset_id,))
                 return cursor.rowcount > 0
+    def get_dataset_name_by_cvat_project_id(self, cvat_project_id: int) -> Optional[str]:
+        query = "SELECT name FROM datasets WHERE cvat_project_id = ?"
+        with closing(self._get_connection()) as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, (cvat_project_id,))
+            row = cursor.fetchone()
+            if row:
+                return row[0]
+        return None
+
+    def list_pretrained_models(self):
+        query = "SELECT * FROM models WHERE cvat_project_id = -1"
+        with closing(self._get_connection()) as conn:
+            cursor = conn.cursor()
+            cursor.execute(query)
+            rows = cursor.fetchall()
+            return [dict(row) for row in rows]
+    
 
 def test_dataset_crud():
     # Use a test database to avoid messing up the production one, or just clean up after

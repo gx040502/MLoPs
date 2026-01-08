@@ -1,7 +1,8 @@
 import os
 from pathlib import Path
 from ultralytics import YOLO, settings
-
+import time
+import json
 
 def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, aug_params=None, format_name="Ultralytics YOLO Detection 1.0"):
     """
@@ -21,8 +22,9 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
     print(f"Starting training for project: {project_name}")
     print(f"Model: {model_path}, Epochs: {epochs}, Imgsz: {imgsz}, Manual Aug: {manual_aug}, Format: {format_name}")
 
-    dataset_dir = Path('dataset') / project_name
-    output_dir = Path('models/train') / project_name
+    base_dir = Path(__file__).resolve().parent
+    dataset_dir = base_dir / 'datasets' / project_name
+    output_dir = base_dir / 'models/train' / project_name
     output_dir.mkdir(parents=True, exist_ok=True)
     model_output_name = model_path.split("/")[-1].split(".")[0]
     
@@ -34,9 +36,6 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         model = YOLO(model_path)
 
         # --- ETA CALLBACK DEFINITION ---
-        import time
-        import json
-
         class TrainingCallback:
             def __init__(self, total_epochs, project_dir):
                 self.total_epochs = total_epochs

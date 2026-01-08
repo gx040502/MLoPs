@@ -1,14 +1,5 @@
 {
-    "cvat_url": "http://100.110.21.83:8080",
-    "cvat_username": "gyapxun",
-    "cvat_password": "mmcgtm2014",
-    "datasets_dir": "./.gradio",
+    "datasets_dir": "/home/intern/Gitlab/pipeline/src/ModelManager/datasets/temp",
     "datasets": [],
-    "formatted_datasets": [],
-    "own_models": [
-        {
-            "name": "modelABC",
-            "path": ".gradio/own_models/modelABC.pt"
-        }
-    ]
+    "formatted_datasets": []
 }

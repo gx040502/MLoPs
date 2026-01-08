@@ -102,14 +102,7 @@ def create_tab(app):
                     )
                 )
 
-                # CVAT Integration Elements
-                cvat_project_dropdown = gr.Dropdown(
-                    label="Assign to CVAT Project", 
-                    choices=app.get_cvat_projects(), 
-                    visible=False, 
-                    interactive=False,
-                    elem_id="cvat_project_dd"
-                )
+
                 cvat_btn = gr.Button("Create CVAT Project and Task", visible=False, variant="primary")
                 
                 detection_info = gr.Textbox(label="Detection Details", lines=10, show_copy_button=True, visible=False)
@@ -129,7 +122,7 @@ def create_tab(app):
         "vlm_output_image": vlm_output_image,
         "inference_btn": inference_btn,
         "inference_output": inference_output,
-        "cvat_project_dropdown": cvat_project_dropdown,
+
         "cvat_btn": cvat_btn,
         "detection_info": detection_info,
         "raw_output": raw_output
@@ -146,13 +139,11 @@ def setup_events(app, components, all_components):
     # Set up upload event handlers
     setup_upload_events(app, components, all_components)
     
-    def refresh_cvat_dropdown():
-        """Refresh CVAT projects dropdown after inference"""
-        projects = app.get_cvat_projects()
+    def refresh_cvat_ui():
+        """Show CVAT button after inference"""
         return [
             gr.Button(visible=False),  # Hide inference button
             gr.Button(visible=True),   # Show CVAT button
-            gr.Dropdown(visible=True, choices=projects, interactive=True)  # Show and refresh dropdown
         ]
 
     def on_gallery_select(evt: gr.SelectData): 
@@ -179,17 +170,17 @@ def setup_events(app, components, all_components):
         inputs=[c["vlm_text_input"], c["vlm_confidence_slider"], c["inference_format"]],
         outputs=[c["inference_output"]]
     ).then(
-        fn=lambda _: refresh_cvat_dropdown(),
-        outputs=[c["inference_btn"], c["cvat_btn"], c["cvat_project_dropdown"]]
+        fn=lambda _: refresh_cvat_ui(),
+        outputs=[c["inference_btn"], c["cvat_btn"]]
     )
 
     c["cvat_btn"].click(
         fn=app.create_cvat_project_with_tasks,
-        inputs=[c["cvat_project_dropdown"]],
+        inputs=[],
         outputs=[c["inference_output"]]
     ).then(
-        fn=lambda _: [gr.Button(visible=True), gr.Button(visible=False), gr.Dropdown(visible=False)],
-        outputs=[c["inference_btn"], c["cvat_btn"], c["cvat_project_dropdown"]]
+        fn=lambda _: [gr.Button(visible=True), gr.Button(visible=False)],
+        outputs=[c["inference_btn"], c["cvat_btn"]]
     )
     
     c["vlm_text_input"].submit(

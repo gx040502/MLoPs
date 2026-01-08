@@ -56,7 +56,7 @@ def extract_and_flatten_zip(zip_path, extract_to):
         if temp_extract.exists():
             shutil.rmtree(temp_extract)
 
-def upload_dataset_by_zip(zip_file_path, datasets_dir, config, save_config_callback):
+def upload_dataset_by_zip(zip_file_path, temp_dir, config, save_config_callback):
     """
     Upload and extract a raw dataset from a zip file, then save it to the datasets directory in settings.json.
     
@@ -79,7 +79,8 @@ def upload_dataset_by_zip(zip_file_path, datasets_dir, config, save_config_callb
     
     try:
         project_name = zip_file_path.split('/')[-1].replace('.zip', '')
-        output_dir = os.path.join(datasets_dir, project_name)
+        
+        output_dir = os.path.join(temp_dir, project_name)
         
         # Use smart extraction that auto-flattens nested structures
         extract_and_flatten_zip(zip_file_path, output_dir)
