@@ -56,18 +56,17 @@ def extract_and_flatten_zip(zip_path, extract_to):
         if temp_extract.exists():
             shutil.rmtree(temp_extract)
 
-def upload_dataset_by_zip(zip_file_path, temp_dir, config, save_config_callback):
+def upload_dataset_by_zip(zip_file_path, temp_dir):
     """
-    Upload and extract a raw dataset from a zip file, then save it to the datasets directory in settings.json.
+    Upload and extract a raw dataset from a zip file.
     
     Args:
         zip_file_path: Path to the zip file to upload
-        datasets_dir: Directory where datasets are stored
-        config: Configuration dictionary to update
-        save_config_callback: Function to call to save config changes
+        temp_dir: Directory where datasets are stored
         
     Returns:
-        tuple: (success: bool, message: str, project_name: str or None)
+        tuple: (success: bool, message: str, dataset_info: dict or None)
+               dataset_info format: {"name": project_name, "path": output_dir}
     """
     
     if zip_file_path is None:
@@ -85,12 +84,9 @@ def upload_dataset_by_zip(zip_file_path, temp_dir, config, save_config_callback)
         # Use smart extraction that auto-flattens nested structures
         extract_and_flatten_zip(zip_file_path, output_dir)
         
-        # Update the config with the new dataset
-        if "datasets" not in config:
-            config["datasets"] = []
-        config["datasets"].append({"name": project_name, "path": output_dir})
-        save_config_callback()
+        # Return dataset info instead of modifying config
+        dataset_info = {"name": project_name, "path": output_dir}
 
-        return True, f"Successfully unzipped the file to '{output_dir}'.", project_name
+        return True, f"Successfully unzipped the file to '{output_dir}'.", dataset_info
     except Exception as e:
         return False, f"An error occurred while unzipping the file: {e}", None

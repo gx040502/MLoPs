@@ -24,47 +24,37 @@ from .utils import COCODatasetBuilder, GroundingDINODetector
 from src.ModelManager.utils import extract_and_flatten_zip, upload_dataset_by_zip
 from ultralytics import YOLO, SAM
 from src.ModelManager.config import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
-CVAT_HOST = CVAT_HOST_IP + ":" + CVAT_HOST_PORT
+CVAT_HOST = str(CVAT_HOST_IP) + ":" + str(CVAT_HOST_PORT)
 
 class APP():
 
     def __init__(self, vlm_model: GroundingDINODetector=None):
-        self.json_path = 'settings.json'
-        try:
-            with open(self.json_path, 'r') as config_file:
-                self.config = json.load(config_file)
-                self.datasets_dir = self.config.get("datasets_dir", "/home/intern/Gitlab/pipeline/src/ModelManager/datasets/temp")
-                self.selected_dataset = ''
-                self.selected_dataset_1st_img_path = ""
+        # In-memory dataset storage (dict format: {name: {name, path}})
+        self.datasets = {}
+        self.datasets_dir = str(Path(__file__).parent.parent / "ModelManager/datasets/temp")
+        self.selected_dataset = ''
+        self.selected_dataset_1st_img_path = ""
 
-            self.sam_model = SAM("sam2.1_b.pt")
-            self.model = vlm_model
-            # Setup Training directory path
-            self.train_root_dir = Path("/home/intern/Gitlab/pipeline/1.Train")
-
-        except (FileNotFoundError, json.JSONDecodeError):
-            print("Could not load settings.json. Using default configuration.")
-            self.config = {}
-            self.datasets_dir = "/home/intern/Gitlab/pipeline/src/ModelManager/datasets/temp"
-            self.train_root_dir = Path("/home/intern/Gitlab/pipeline/1.Train")
+        self.sam_model = SAM("sam2.1_b.pt")
+        self.model = vlm_model
     
     def get_all_datasets(self, name=None):
-        # A list of datasets from the configuration, each element is a dict with 'name' and 'path'
-        return self.config.get("datasets", [])
+        # Returns a list of datasets, each element is a dict with 'name' and 'path'
+        return list(self.datasets.values())
 
     def get_dataset_by_name(self, name):
         """
         Retrieves a single dataset's details by its name.
         """
-        dataset = next((d for d in self.config.get("datasets", []) if d["name"] == name), None)
-        if dataset: return True, dataset
+        dataset = self.datasets.get(name)
+        if dataset:
+            return True, dataset
         return False, f"Dataset '{name}' not found."    
     
     def remove_dataset(self, name):
         """
-        Removes a dataset from the configuration and also deletes its directory from the file system.
+        Removes a dataset from memory and deletes its directory from the file system.
         """
-        datasets = self.config.get("datasets", [])
         success, dataset_to_remove = self.get_dataset_by_name(name)
         
         if not success:
@@ -81,10 +71,9 @@ class APP():
                 message = f"Error deleting directory {dataset_path}: {e}"
                 return False, message
         else:
-            message = f"Directory for '{name}' not found on disk, only removing from configuration."
+            message = f"Directory for '{name}' not found on disk, only removing from memory."
         
         # Also remove associated zip file if it exists
-        # The zip file is typically in the same parent directory as the dataset folder
         if dataset_path:
             zip_file_path = f"{dataset_path}.zip"
             if os.path.exists(zip_file_path):
@@ -94,24 +83,11 @@ class APP():
                 except OSError as e:
                     print(f"⚠️  Warning: Could not delete zip file {zip_file_path}: {e}")
             
-        # Remove the dataset from the configuration list
-        self.config["datasets"] = [d for d in datasets if d.get("name") != name]
-        self.save_config()
+        # Remove the dataset from memory
+        del self.datasets[name]
 
-        return True, f"Dataset '{name}' removed from configuration successfully."
+        return True, f"Dataset '{name}' removed successfully."
 
-    def save_config(self):
-        """
-        Saves the current configuration dictionary to the settings.json file.
-        """
-        try:
-            # Open the file in write mode ('w') and write the dictionary as JSON
-            with open(self.json_path, 'w') as config_file:
-                json.dump(self.config, config_file, indent=4)
-
-            
-        except Exception as e:
-            print(f"An error occurred while saving the configuration: {e}")
 
     def select_dataset(self, name):
         
@@ -145,15 +121,18 @@ class APP():
 
     def upload_dataset_by_zip(self, zip_file_path):
         """
-        Wrapper method that calls the utility function.
-        Kept for backward compatibility.
+        Uploads a dataset from zip file, extracts it, and stores in memory.
         """
-        return upload_dataset_by_zip(
+        success, message, dataset_info = upload_dataset_by_zip(
             zip_file_path,
-            self.datasets_dir,
-            self.config,
-            self.save_config
+            self.datasets_dir
         )
+        
+        if success and dataset_info:
+            # Add to in-memory datasets dictionary
+            self.datasets[dataset_info["name"]] = dataset_info
+        
+        return success, message, dataset_info.get("name", "") if dataset_info else ""
     # -------------------------------------------------------------------------
     #                         PREDICT MODEL LOGIC
     # -------------------------------------------------------------------------
@@ -225,9 +204,9 @@ class APP():
         if not raw_zip_path.exists():
             # Attempt download (simplified version of download logic)
             try:
-                url = self.config.get("cvat_url")
-                username = self.config.get("cvat_username")
-                password = self.config.get("cvat_password")
+                url = CVAT_HOST
+                username = CVAT_USERNAME
+                password = CVAT_PASSWORD
                 host = url.split('/projects')[0].split('/tasks')[0].split('jobs')[0].rstrip('/')
                 
                 print(f"Downloading Project {project_id} for preview...")
@@ -482,218 +461,6 @@ class APP():
             print(f"Augmentation preview error: {e}")
             return images[0] if images else None
         
-    def start_training(self, formatted_path, model_name, epochs, imgsz=640, manual_aug=False, cvat_project_id=None, db_model_name="", db_model_version="", format_name="Ultralytics YOLO Detection 1.0", **kwargs):
-        """
-        Orchestrates the training process:
-        1. Locate and extract the formatted dataset zip
-        2. Call train.py
-        """
-        if not formatted_path:
-            return "❌ Error: No dataset selected."
-        if not model_name:
-            return "❌ Error: No model selected."
-            
-        print(f"Starting training: Dataset Path={formatted_path}, Model={model_name}, Epochs={epochs}, ImgSz={imgsz}, ManualAug={manual_aug}")
-        
-        # Extract augmentation parameters from kwargs
-        aug_params = {}
-        if manual_aug:
-            # list of known augmentation args
-            known_args = [
-                'hsv_h', 'hsv_s', 'hsv_v', 'bgr', 
-                'degrees', 'translate', 'scale', 'shear', 'perspective', 'flipud', 'fliplr',
-                'mosaic', 'mixup', 'cutmix', 'copy_paste',
-                'erasing'
-            ]
-            for key, value in kwargs.items():
-                if key in known_args:
-                    aug_params[key] = value
-        
-        # 1. Get dataset path
-        formatted_dfs = self.config.get("formatted_datasets", [])
-        dataset_entry = next((d for d in formatted_dfs if d["path"] == formatted_path), None)
-        
-        # Handle both registered datasets and uploaded datasets
-        if dataset_entry:
-            # Dataset from CVAT task (registered in config)
-            formatted_dataset_name = dataset_entry["name"]
-        else:
-            # Uploaded dataset (not in config) - derive name from filename
-            formatted_dataset_name = Path(formatted_path).stem.replace("formatted_", "")
-            print(f"Using uploaded dataset: {formatted_dataset_name}")
-            
-        zip_path = Path(formatted_path)
-        if not zip_path.exists():
-            return f"❌ Error: Zip file not found at {zip_path}"
-            
-        # 2. Extract to Dataset folder (using utils.ProjectManager conventions)
-        # We'll use the dataset name as the project name
-        project_name = formatted_dataset_name
-        # ProjectManager expects data in specific location.
-        # We need to extract to /home/intern/Gitlab/pipeline/Dataset/<project_name>
-        # Let's manually handle extraction to ensure it matches what train.py expects via ProjectManager
-        
-        target_dir = Path("Dataset") / project_name
-        
-        try:
-            # Clean existing if needed or just overwrite? ZipFile extractall overwrites.
-            if target_dir.exists():
-                shutil.rmtree(target_dir)
-            
-            # Use smart extraction that auto-flattens nested structures
-            self.extract_and_flatten_zip(zip_path, target_dir)
-                
-            print(f"Extracted dataset to {target_dir}")
-            
-            # --- Rewrite paths to absolute paths ---
-            abs_target_dir = target_dir.resolve()
-            
-            # 1. Update data.yaml
-            yaml_path = target_dir / "data.yaml"
-            if yaml_path.exists():
-                with open(yaml_path, 'r') as f:
-                    yaml_lines = f.readlines()
-                
-                new_yaml_lines = []
-                for line in yaml_lines:
-                    if line.strip().startswith("train:"):
-                        new_yaml_lines.append(f"train: {abs_target_dir / 'Train.txt'}\n")
-                    elif line.strip().startswith("val:"):
-                        new_yaml_lines.append(f"val: {abs_target_dir / 'Validation.txt'}\n")
-                    elif line.strip().startswith("test:"):
-                        new_yaml_lines.append(f"test: {abs_target_dir / 'Test.txt'}\n")
-                    else:
-                        new_yaml_lines.append(line)
-                
-                with open(yaml_path, 'w') as f:
-                    f.writelines(new_yaml_lines)
-            
-            # 2. Update Train.txt and Validation.txt
-            for txt_name in ["Train.txt", "Validation.txt", "Test.txt"]:
-                txt_path = target_dir / txt_name
-                if txt_path.exists():
-                    with open(txt_path, 'r') as f:
-                        lines = f.readlines()
-                    
-                    new_lines = []
-                    for line in lines:
-                        line = line.strip()
-                        if line.startswith("./"):
-                            # Replace ./ with absolute path
-                            new_lines.append(str(abs_target_dir / line[2:]) + "\n")
-                        else:
-                            # Fallback if it doesn't start with ./ (e.g. already absolute or relative without dot)
-                            # Assuming our formatter writes ./
-                            new_lines.append(line + "\n")
-                    
-                    with open(txt_path, 'w') as f:
-                        f.writelines(new_lines)
-            
-        except Exception as e:
-            return f"❌ Error extracting dataset: {e}"
-            
-        # 3. Call train.py
-        try:
-            import train
-            
-            # Construct absolute model path
-            sub_dir = "detection"
-            if format_name and ("Segmentation" in format_name):
-                 sub_dir = "segmentation"
-            elif format_name and ("Classification" in format_name):
-                 sub_dir = "classification"
-
-            model_path = str(Path(f"models/pre_trained/{sub_dir}") / model_name)
-            
-            success, msg = train.run_training(
-                project_name=project_name,
-                model_path=model_path,
-                epochs=int(epochs),
-                imgsz=int(imgsz),
-                manual_aug=manual_aug,
-                aug_params=aug_params,
-                format_name=format_name
-            )
-            
-            if success:
-                # Register model in database
-                try:
-                    if cvat_project_id:
-                        registry = ModelRegistry('model_registry.db')
-                        
-                        # Determine final model name and version
-                        final_model_name = db_model_name.strip() if db_model_name.strip() else f"Project_{project_name}"
-                        
-                        # Prepare project ID
-                        project_id_int = int(str(cvat_project_id).split(':')[0].strip()) if isinstance(cvat_project_id, str) else cvat_project_id
-                        
-                        if db_model_version.strip():
-                            final_version = db_model_version.strip()
-                        else:
-                            # Auto-increment version
-                            models_list = registry.list_models(cvat_project_id=project_id_int)
-                            final_version = f"v{len(models_list) + 1}"
-                        
-                        # Register the trained model - find the latest run directory
-                        # Training saves to: 1.Train/{project_name}/{model}_{epochs}/weights/best.pt
-                        project_dir = self.train_root_dir / project_name
-                        
-                        # Find the most recent run directory (has weights/best.pt)
-                        best_model_path = None
-                        if project_dir.exists():
-                            for run_dir in sorted(project_dir.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
-                                potential_path = run_dir / "weights" / "best.pt"
-                                if potential_path.exists():
-                                    best_model_path = potential_path
-                                    break
-                        
-                        if best_model_path and best_model_path.exists():
-                            model_id = registry.register_model(
-                                cvat_project_id=project_id_int,
-                                name=final_model_name,
-                                version=final_version,
-                                model=str(best_model_path)
-                            )
-                            print(f"✅ Model registered in database with ID: {model_id}, Name: {final_model_name} {final_version}")
-                            msg += f"\n\n📊 Model registered: {final_model_name} {final_version} (ID: {model_id})"
-                        else:
-                            print(f"⚠️ Best model not found in {project_dir}, skipping registration")
-                except Exception as reg_err:
-                    print(f"⚠️ Failed to register model in database: {reg_err}")
-                    import traceback
-                    traceback.print_exc()
-
-                try:
-                    # Check if file is in the root .gradio dir (not own_formatted)
-                    # and starts with formatted_task_ or manually matches
-                    root_dir = Path(self.datasets_dir).resolve()
-                    parent_dir = zip_path.parent.resolve()
-                    
-                    print(f"DEBUG Cleanup: ZIP={zip_path}, Parent={parent_dir}, Root={root_dir}")
-                    print(f"DEBUG Cleanup: Exists={zip_path.exists()}, IsInRoot={parent_dir == root_dir}")
-
-                    is_in_root = parent_dir == root_dir
-                    if is_in_root and zip_path.exists():
-                        print(f"🧹 Cleaning up temporary zip: {zip_path}")
-                        zip_path.unlink()
-
-                        # Remove from config
-                        formatted_datasets = self.config.get("formatted_datasets", [])
-                        formatted_datasets = [d for d in formatted_datasets if d["path"] != formatted_path]
-                        self.config["formatted_datasets"] = formatted_datasets
-                        self.save_config()
-
-
-                except Exception as cleanup_err:
-                    print(f"⚠️ Cleanup warning: {cleanup_err}")
-
-                return f"✅ {msg}"
-            else:
-                return f"❌ {msg}"
-                
-        except Exception as e:
-            return f"❌ Error invoking training: {e}"
-        
     def _sanitize_stats_for_json(self, data):
         """Recursively ensure all dictionary keys are strings for JSON compatibility."""
         if isinstance(data, dict):
@@ -940,20 +707,10 @@ class APP():
                     arcname = os.path.relpath(file_path, temp_dir)
                     zipf.write(file_path, arcname)
                     
-        # Update config with new temp dataset
-        if "datasets" not in self.config:
-            self.config["datasets"] = []
-            
-        # Check if already exists in config, update it
-        existing_idx = next((i for i, d in enumerate(self.config["datasets"]) if d["name"] == temp_name), -1)
+        # Update in-memory datasets with new temp dataset
         new_entry = {"name": temp_name, "path": temp_dir}
+        self.datasets[temp_name] = new_entry
         
-        if existing_idx >= 0:
-            self.config["datasets"][existing_idx] = new_entry
-        else:
-            self.config["datasets"].append(new_entry)
-            
-        self.save_config()
         self.select_dataset(temp_name)
 
         return True, zip_output_path
