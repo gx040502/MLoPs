@@ -112,7 +112,8 @@ def setup_events(app, components, all_components):
     def refresh_own_model_dropdown():
         """Refresh dropdown with available custom models"""
         models = model_manager.get_pretrained_models()
-        choices = [m["id"] for m in models]
+        # Create (label, value) tuples: display name, use id as value
+        choices = [(m["name"], m["id"]) for m in models]
         return gr.update(choices=choices, value=None)
     
     def handle_model_upload(model_name, upload_file):

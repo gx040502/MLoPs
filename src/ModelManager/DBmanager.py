@@ -207,14 +207,18 @@ class DBManager:
     def get_unique_projects(self) -> List[Dict[str, Any]]:
         """
         Get unique CVAT projects that have trained models.
-        Returns list of dicts with cvat_project_id and count of models.
+        Returns list of dicts with cvat_project_id, project name, and count of models.
         """
         query = """
-            SELECT cvat_project_id, COUNT(*) as model_count
-            FROM models
-            WHERE cvat_project_id != -1
-            GROUP BY cvat_project_id
-            ORDER BY cvat_project_id
+            SELECT 
+                m.cvat_project_id, 
+                d.name as name, 
+                COUNT(*) as model_count
+            FROM models m
+            LEFT JOIN datasets d ON m.cvat_project_id = d.cvat_project_id
+            WHERE m.cvat_project_id != -1
+            GROUP BY m.cvat_project_id, d.name
+            ORDER BY m.cvat_project_id
         """
         with closing(self._get_connection()) as conn:
             cursor = conn.cursor()

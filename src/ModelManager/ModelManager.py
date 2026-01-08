@@ -365,6 +365,36 @@ class ModelManager:
             model_path = model_record['storage_path']
             print(f"Loading model from path: {model_path}")
             return YOLO(model_path)
+    
+    def get_model_trained_args(self, model_path):
+        """
+        Load training arguments from args.yaml in the model's training directory.
+        
+        Args:
+            model_path: Path to the model file (e.g., .../weights/best.pt)
+            
+        Returns:
+            dict: Training arguments, or None if not found
+        """
+        # Convert to Path object if it's a string
+        if isinstance(model_path, str):
+            model_path = Path(model_path)
+        
+        # Navigate from best.pt -> weights -> training_run_dir
+        args_dir = model_path.parent.parent
+        args_file = args_dir / "args.yaml"
+        
+        if args_file.exists():
+            try:
+                with open(args_file, 'r') as f:
+                    args = yaml.safe_load(f)
+                return args
+            except Exception as e:
+                print(f"Error loading args.yaml: {e}")
+                return None
+        else:
+            print(f"args.yaml not found at {args_file}")
+            return None
 
     def get_test_images(self, project_id):
         """
@@ -599,7 +629,7 @@ class ModelManager:
             print(f"Error during video inference: {str(e)}")
             return None, json.dumps({"error": str(e)}, indent=2)
     
-    def display_model_details(self, model_id):
+    def display_model_details(self, model_id, model_trained_args=None):
         """Display selected model details with rich HTML formatting"""
         if not model_id:
             return "<p>Select a model to view details</p>", gr.update(visible=False)
@@ -623,6 +653,7 @@ class ModelManager:
             registry = DBManager('database.db')
             model_info = registry.get_pt_model_info(model)
             
+
             # Format labels - each on new line
             labels = model_info['labels']
             label_str = '\n'.join([f"{k}: {v}" for k, v in labels.items()]) if isinstance(labels, dict) else str(labels)
@@ -645,6 +676,34 @@ class ModelManager:
             
             # Format metrics
             metrics = model_info.get('metrics', {})
+            
+            # Format training args if provided
+            training_args_html = ""
+            if model_trained_args:
+                # Select key training parameters to display
+                key_args = ['epochs', 'batch', 'imgsz', 'optimizer', 'lr0', 'lrf', 
+                           'momentum', 'weight_decay', 'warmup_epochs', 'hsv_h', 
+                           'hsv_s', 'hsv_v', 'degrees', 'translate', 'scale', 
+                           'fliplr', 'mosaic', 'mixup']
+                
+                args_rows = []
+                for key in key_args:
+                    if key in model_trained_args:
+                        value = model_trained_args[key]
+                        # Format the value nicely
+                        if isinstance(value, float):
+                            value_str = f"{value:.4f}"
+                        else:
+                            value_str = str(value)
+                        args_rows.append(f'<div class="data-row"><span class="data-label">{key}</span><span class="data-value">{value_str}</span></div>')
+                
+                if args_rows:
+                    training_args_html = f"""
+                    <div class="info-card">
+                        <div class="card-title">⚙️ Training Config</div>
+                        {''.join(args_rows[:12])}
+                    </div>
+                    """
             
             html = f"""
             <style>
@@ -776,6 +835,8 @@ class ModelManager:
                             for k, v in list(metrics.items())[:6]
                         ])}
                     </div>
+                    
+                    {training_args_html}
                 </div>
             </div>
             """

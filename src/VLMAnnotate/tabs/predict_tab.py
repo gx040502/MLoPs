@@ -23,7 +23,7 @@ def create_tab(app):
             # Format project choices: "Project 126 (3 models)"
             project_choices = []
             for p in projects:
-                choice_label = f"Project {p['cvat_project_id']} ({p['model_count']} models)"
+                choice_label = f"{p['name']} ({p['model_count']} models) ID: {p['cvat_project_id']}"
                 project_choices.append((choice_label, p['cvat_project_id']))
             
             initial_project_id = project_choices[0][1] if project_choices else None
@@ -34,7 +34,7 @@ def create_tab(app):
             #initial_models = registry.list_models(cvat_project_id=initial_project_id) if initial_project_id else []
             model_choices = []
             for m in initial_models:
-                choice_label = f"{m['name']} {m['version']} - {m['primary_score_type']}: {m['primary_score']:.2f} - {m['task'].title()}"
+                choice_label = f"{m['name']} {m['version']} - {m['task'].title()}: {m['primary_score']:.2f}"
                 model_choices.append((choice_label, m['id']))
             
             initial_model_id = model_choices[0][1] if model_choices else None
@@ -159,12 +159,11 @@ def setup_events(app, components, all_components):
     def on_predict_tab_select():
         """Refreshes the project dropdown when tab is selected."""
         app.cleanup_preview()
-        registry = DBManager('database.db')
-        projects = registry.get_unique_projects()
+        projects = model_manager.get_trained_projects()
         
         project_choices = []
         for p in projects:
-            choice_label = f"Project {p['cvat_project_id']} ({p['model_count']} models)"
+            choice_label = f"{p['name']} ({p['model_count']} models) ID: {p['cvat_project_id']}"
             project_choices.append((choice_label, p['cvat_project_id']))
         
         return gr.update(choices=project_choices, value=None)
@@ -179,7 +178,7 @@ def setup_events(app, components, all_components):
         
         model_choices = []
         for m in models:
-            choice_label = f"{m['name']} {m['version']} - {m['primary_score_type']}: {m['primary_score']:.2f} - {m['task'].title()}"
+            choice_label = f"{m['name']} {m['version']} - {m['task'].title()}: {m['primary_score']:.2f}"
             model_choices.append((choice_label, m['id']))
         
         return (
@@ -201,7 +200,8 @@ def setup_events(app, components, all_components):
             return "<p>Model not found</p>", gr.update(value=[]), gr.update(value=[]), gr.update(visible=True), gr.update(visible=True)
         
         # Format details HTML
-        details_html, _ = model_manager.display_model_details(model_id)
+        model_trained_args=model_manager.get_model_trained_args(model_info['storage_path'])
+        details_html, _ = model_manager.display_model_details(model_id,model_trained_args)
         
         # Get test images from project
         cvat_project_id = model_info['cvat_project_id']
