@@ -212,12 +212,12 @@ class DBManager:
         query = """
             SELECT 
                 m.cvat_project_id, 
-                d.name as name, 
-                COUNT(*) as model_count
+                MAX(d.name) as name, 
+                COUNT(DISTINCT m.id) as model_count
             FROM models m
             LEFT JOIN datasets d ON m.cvat_project_id = d.cvat_project_id
             WHERE m.cvat_project_id != -1
-            GROUP BY m.cvat_project_id, d.name
+            GROUP BY m.cvat_project_id
             ORDER BY m.cvat_project_id
         """
         with closing(self._get_connection()) as conn:
