@@ -122,7 +122,6 @@ def create_tab(app):
         "vlm_output_image": vlm_output_image,
         "inference_btn": inference_btn,
         "inference_output": inference_output,
-
         "cvat_btn": cvat_btn,
         "detection_info": detection_info,
         "raw_output": raw_output
@@ -139,12 +138,21 @@ def setup_events(app, components, all_components):
     # Set up upload event handlers
     setup_upload_events(app, components, all_components)
     
-    def refresh_cvat_ui():
-        """Show CVAT button after inference"""
-        return [
-            gr.Button(visible=False),  # Hide inference button
-            gr.Button(visible=True),   # Show CVAT button
-        ]
+    def refresh_cvat_ui(inference_output):
+        """Show CVAT button only if inference succeeded"""
+        # Check if output contains error (❌) or success
+        if isinstance(inference_output, str) and "❌" in inference_output:
+            # Inference failed - keep buttons as is
+            return [
+                gr.Button(visible=True),   # Keep inference button visible
+                gr.Button(visible=False),  # Keep CVAT button hidden
+            ]
+        else:
+            # Inference succeeded - swap buttons
+            return [
+                gr.Button(visible=False),  # Hide inference button
+                gr.Button(visible=True),   # Show CVAT button
+            ]
 
     def on_gallery_select(evt: gr.SelectData): 
         return evt.value["image"]["path"]
@@ -170,7 +178,8 @@ def setup_events(app, components, all_components):
         inputs=[c["vlm_text_input"], c["vlm_confidence_slider"], c["inference_format"]],
         outputs=[c["inference_output"]]
     ).then(
-        fn=lambda: refresh_cvat_ui(),
+        fn=refresh_cvat_ui,
+        inputs=[c["inference_output"]],
         outputs=[c["inference_btn"], c["cvat_btn"]]
     )
 

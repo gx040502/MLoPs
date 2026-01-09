@@ -1007,6 +1007,16 @@ class APP():
         
         imgs = [f for f in dataset_dir.iterdir() if f.suffix.lower() in ['.png', '.jpg', '.jpeg', '.bmp', '.gif']]
 
+        # Validate minimum image count
+        if len(imgs) < 2:
+            return (
+                f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
+                f"background: var(--input-background-fill); border-radius: var(--container-radius); "
+                f"color: var(--body-text-color); min-height: 80px;'>"
+                f"❌ Error: At least 2 images are required for inference. Found only {len(imgs)} image(s)."
+                f"</div>"
+            )
+
         for img_path in imgs:
             img = Image.open(img_path).convert("RGB")
             width, height = img.size
@@ -1087,8 +1097,14 @@ class APP():
         if not all([url, username, password]):
             return "❌ Error: Missing CVAT credentials."
             
-        # Sanitize URL
+        # Sanitize URL and ensure it has http:// protocol
         url = url.split('/projects')[0].split('/tasks')[0].split('jobs')[0].rstrip('/')
+        
+        # Ensure URL starts with http:// or https://
+        if not url.startswith('http://') and not url.startswith('https://'):
+            url = 'http://' + url
+        
+        print(f"CVAT URL: {url}")
 
         dataset_name = self.selected_dataset
         if not dataset_name:
@@ -1116,21 +1132,52 @@ class APP():
                 categories = coco_data.get('categories', [])
                 inf_format = coco_data.get('info', {}).get('inference_format', 'Detection')
                 
-                # 2. Split dataset (7:1:2 ratio)
-                print(f"🔀 Splitting {len(images)} images into Train/Val/Test (7:1:2)...")
+                # 2. Split dataset (7:2:1 ratio) - Ensure Train > Val, prioritize Train and Val over Test
+                print(f"🔀 Splitting {len(images)} images into Train/Val/Test (7:2:1 ratio)...")
                 import random
                 random.seed(42)
                 shuffled_images = random.sample(images, len(images))
                 
                 n_total = len(shuffled_images)
-                n_train = int(n_total * 0.7)
-                n_val = int(n_total * 0.1)
                 
-                train_images = shuffled_images[:n_train]
-                val_images = shuffled_images[n_train:n_train+n_val]
-                test_images = shuffled_images[n_train+n_val:]
-                
+                if n_total < 2:
+                    # Not enough images for both Train and Val
+                    train_images = shuffled_images
+                    val_images = []
+                    test_images = []
+                    print(f"  ⚠️ Warning: Only {n_total} image(s). Val and Test will be empty.")
+                elif n_total == 2:
+                    # Special case: 2 images - ensure both Train and Val get 1
+                    # Exception: Train == Val in this edge case
+                    train_images = shuffled_images[:1]
+                    val_images = shuffled_images[1:2]
+                    test_images = []
+                else:
+                    # 3+ images: Calculate split with 7:2:1 ratio
+                    n_train = max(1, int(n_total * 0.7))  # At least 1 for Train
+                    n_val = max(1, int(n_total * 0.2))     # At least 1 for Val
+                    n_test = n_total - n_train - n_val     # Remainder goes to Test
+                    
+                    # If Test would get negative or 0, redistribute to ensure Train > Val
+                    if n_test <= 0:
+                        n_test = 0
+                        # Ensure Train > Val when Test = 0
+                        # Split remaining images: give more to Train
+                        if n_total == 3:
+                            n_train = 2
+                            n_val = 1
+                        else:
+                            # For 4+ images, maintain proportion but ensure Train > Val
+                            # Use 2:1 ratio for Train:Val when Test=0
+                            n_val = max(1, n_total // 3)
+                            n_train = n_total - n_val
+                    
+                    train_images = shuffled_images[:n_train]
+                    val_images = shuffled_images[n_train:n_train+n_val]
+                    test_images = shuffled_images[n_train+n_val:n_train+n_val+n_test]
+                    
                 print(f"  📊 Train: {len(train_images)}, Val: {len(val_images)}, Test: {len(test_images)}")
+                
                 
                 # Create image_id sets for filtering annotations
                 train_ids = {img['id'] for img in train_images}
@@ -1189,6 +1236,11 @@ class APP():
                 task_urls = []
                 
                 for subset_name, subset_images, subset_ids in subsets:
+                    # Skip creating task if subset has no images
+                    if len(subset_images) == 0:
+                        print(f"\n⏭️  Skipping task: {dataset_name}_{subset_name} (0 images)")
+                        continue
+                    
                     print(f"\n📝 Creating task: {dataset_name}_{subset_name}")
                     
                     # Create task (labels inherited from project)
@@ -1308,7 +1360,6 @@ class APP():
                         except Exception as e:
                             print(f"    ⚠️ Warning: Tag annotation failed: {e}")
                     
-                    
                     # Cleanup temp file
                     temp_coco_file.unlink()
                     
@@ -1370,6 +1421,7 @@ class APP():
 
                 # Build success message
                 project_url = f"{url.rstrip('/')}/projects/{project_id}"
+                print(project_url)
                 
                 tasks_html = "<br>".join([
                     f"<b>{name}:</b> <a href='{task_url}' target='_blank' style='color: var(--link-text-color); text-decoration: underline;'>Task {task_id}</a>"

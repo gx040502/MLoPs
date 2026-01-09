@@ -144,12 +144,18 @@ class ModelManager:
                         l.strip().lower().startswith('test:')
                     )]
                     
-                    # Prepend our correct absolute paths
-                    header_lines = [
-                        f"train: {abs_dataset_dir / 'Train.txt'}",
-                        f"val: {abs_dataset_dir / 'Validation.txt'}",
-                        f"test: {abs_dataset_dir / 'Test.txt'}"
-                    ]
+                    # Build header lines only for splits that exist
+                    header_lines = []
+                    for split_name in ["Train.txt", "Validation.txt", "Test.txt"]:
+                        split_path = abs_dataset_dir / split_name
+                        if split_path.exists():
+                            # Use lowercase keys for YOLO (train, val, test)
+                            yaml_key = split_name.replace('.txt', '').lower()
+                            if yaml_key == 'validation':
+                                yaml_key = 'val'
+                            header_lines.append(f"{yaml_key}: {split_path}")
+                        else:
+                            print(f"Info: {split_name} not found, skipping from data.yaml")
                     
                     final_yaml_content = "\n".join(header_lines) + "\n" + "\n".join(filtered_lines)
                     
@@ -398,44 +404,63 @@ class ModelManager:
 
     def get_test_images(self, project_id):
         """
-        Returns a list of image paths from Dataset/{project_name}/images/Test or test
-        Supports both Detection/Segmentation (images/Test) and Classification (test) formats
+        Returns a list of image paths from Test AND Validation folders combined
+        Supports both Detection/Segmentation (images/Test, images/Validation) and Classification (test/, val/) formats
+        Combines images from: Test + test + Validation + val
         """
 
         dataset=self.get_model_dataset(project_id)
         dataset_path=str(dataset["storage_path"])
      
-        # Try Detection/Segmentation format: images/Test
-        test_dir = Path(dataset_path) / "images" / "Test"
-       
-        # If not found, try Classification format: test/
-        if not test_dir.exists():
-            test_dir = Path(dataset_path) / "test"
+        # Define all possible directories to collect from
+        possible_dirs = [
+            Path(dataset_path) / "images" / "Test",        # Detection/Segmentation Test
+            Path(dataset_path) / "test",                    # Classification test
+            Path(dataset_path) / "images" / "Validation",   # Detection/Segmentation Validation
+            Path(dataset_path) / "val",                     # Classification val
+        ]
         
-        # If still not found, return empty
-        if not test_dir.exists():
+        # Collect images from ALL available directories
+        all_images = []
+        valid_exts = ['.jpg', '.jpeg', '.png', '.bmp']
+        folders_used = []
+        
+        for directory in possible_dirs:
+            if directory.exists():
+                dir_images = []
+                
+                # Check based on directory type
+                if directory.name in ["test", "val"]:
+                    # Classification format: traverse class folders
+                    for class_folder in directory.iterdir():
+                        if class_folder.is_dir():
+                            for img_path in class_folder.iterdir():
+                                if img_path.is_file() and img_path.suffix.lower() in valid_exts:
+                                    dir_images.append(str(img_path.resolve()))
+                else:
+                    # Detection/Segmentation format: images directly in folder
+                    for img_path in directory.iterdir():
+                        if img_path.is_file() and img_path.suffix.lower() in valid_exts:
+                            dir_images.append(str(img_path.resolve()))
+                
+                # Add to combined list if we found images
+                if dir_images:
+                    all_images.extend(dir_images)
+                    folders_used.append(directory.name)
+        
+        # Print which folders were used
+        if folders_used:
+            print(f"📂 Collecting test images from: {', '.join(folders_used)}")
+        else:
+            print("⚠️ No test or validation images found")
             return []
         
-        images = []
-        valid_exts = ['.jpg', '.jpeg', '.png', '.bmp']
+        # Remove duplicates and sort
+        unique_images = sorted(set(all_images))
         
-        # For Classification, test/ contains class subfolders (dog/, cat/, etc.)
-        # Collect images from all subfolders
-        if test_dir.name == "test":
-            # Classification format: traverse class folders
-            for class_folder in test_dir.iterdir():
-                if class_folder.is_dir():
-                    for img_path in class_folder.iterdir():
-                        if img_path.is_file() and img_path.suffix.lower() in valid_exts:
-                            images.append(str(img_path.resolve()))
-        else:
-            # Detection/Segmentation format: images directly in Test/
-            for img_path in test_dir.iterdir():
-                if img_path.is_file() and img_path.suffix.lower() in valid_exts:
-                    images.append(str(img_path.resolve()))
-                
         # Limit to avoid overloading UI if too many
-        return sorted(images)[:50] 
+        return unique_images[:50] 
+
     
     def create_pretrained_model(self, model_name: str, model_path: str):
         """
@@ -526,7 +551,8 @@ class ModelManager:
                 # Return annotated image (classification doesn't change image much, so maybe just original or top1 text)
                 # But YOLO plot() for classify just returns the image usually
                 start_time = time.time()
-                annotated_img = result.plot()
+                annotated_img = result.plot()  # Returns BGR
+                annotated_img = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)  # Convert to RGB for Gradio
                 postprocess_time = (time.time() - start_time) * 1000
                 if verbose: print(f"Prediction done. Time: {postprocess_time:.2f}ms")
                 
@@ -539,7 +565,8 @@ class ModelManager:
                 results = model.predict(image, **params)
                 
                 res = results[0]
-                annotated_img = res.plot()
+                annotated_img = res.plot()  # Returns BGR
+                annotated_img = cv2.cvtColor(annotated_img, cv2.COLOR_BGR2RGB)  # Convert to RGB for Gradio
                 postprocess_time = (time.time() - start_time) * 1000
                 if verbose: print(f"Prediction done. Time: {postprocess_time:.2f}ms")
                 
