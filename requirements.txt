@@ -13,9 +13,6 @@ asgi-lifespan==2.1.0
 asttokens==3.0.0
 async-lru==2.0.5
 attrs==25.4.0
-autodistill==0.1.29
-autodistill-grounded-sam==0.1.2
-autodistill-yolov8==0.1.4
 babel==2.17.0
 beautifulsoup4==4.14.2
 bleach==6.2.0
@@ -44,8 +41,8 @@ fqdn==1.5.1
 frozenlist==1.8.0
 fsspec==2025.9.0
 future==1.0.0
-gradio==5.49.0
-gradio_client==1.13.3
+gradio==6.2.0
+gradio_client==2.0.2
 greenlet==3.2.4
 groovy==0.1.2
 grpcio==1.76.0
@@ -178,11 +175,10 @@ rfc3987-syntax==1.1.0
 rich==14.1.0
 rpds-py==0.27.1
 ruff==0.13.3
-safehttpx==0.1.6
+safehttpx==0.1.7
 safetensors==0.6.2
 scipy==1.16.2
 seaborn==0.13.2
-SEEAI==0.0.0
 semantic-version==2.10.0
 Send2Trash==1.8.3
 sentry-sdk==2.48.0

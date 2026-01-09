@@ -54,7 +54,7 @@ def main():
     }
     """
 
-    with gr.Blocks(css=custom_css, theme=gr.themes.Soft(), title="See.AI Agent", fill_height=True) as app_interface:
+    with gr.Blocks(title="See.AI Agent", fill_height=True) as app_interface:
         load_dataset_interface(app_interface, app)
 
 
@@ -68,7 +68,9 @@ def main():
         share=True,
         server_name="0.0.0.0",  # Allow external connections
         server_port=6605, #Testing Port
-        allowed_paths=[gradio_dir]
+        allowed_paths=[gradio_dir],
+        css= custom_css,
+        theme = gr.themes.Soft()
     )
 #testing
 if __name__ == '__main__':

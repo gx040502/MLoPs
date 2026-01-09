@@ -75,7 +75,7 @@ def create_upload_components(app):
             video_dataframe = gr.Dataframe(
                 headers=["Video Name", "Duration"],
                 datatype=["str", "str"],
-                col_count=(2, "fixed"),
+                column_count=(2, "fixed"),
                 type="pandas",
                 interactive=False,
                 label="Videos found in archive"

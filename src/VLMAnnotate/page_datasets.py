@@ -53,7 +53,7 @@ def load_dataset_interface(app_interface, app):
     gr.Markdown(
         """
         <div class="page-header">
-            <h1>🗂️ Data Management System</h1>
+            <h1>🗂️ SEE AI</h1>
         </div>
         """
     )

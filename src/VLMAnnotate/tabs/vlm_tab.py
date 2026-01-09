@@ -81,7 +81,6 @@ def create_tab(app):
                 prompt_output = gr.Textbox(
                     label="Parameters Used ", 
                     lines=2, 
-                    show_copy_button=False,
                     visible=False
                 )
                 vlm_output_image = gr.Image(label="Detection Results", height=400)
@@ -105,8 +104,8 @@ def create_tab(app):
 
                 cvat_btn = gr.Button("Create CVAT Project and Task", visible=False, variant="primary")
                 
-                detection_info = gr.Textbox(label="Detection Details", lines=10, show_copy_button=True, visible=False)
-                raw_output = gr.Textbox(label="Raw Results", lines=5, show_copy_button=True, visible=False)
+                detection_info = gr.Textbox(label="Detection Details", lines=10, visible=False)
+                raw_output = gr.Textbox(label="Raw Results", lines=5, visible=False)
 
     # Merge upload components with VLM components
     components_dict = {
@@ -188,6 +187,7 @@ def setup_events(app, components, all_components):
         inputs=[],
         outputs=[c["inference_output"]]
     ).then(
+        fn=lambda: [gr.Button(visible=True), gr.Button(visible=False)],
         fn=lambda: [gr.Button(visible=True), gr.Button(visible=False)],
         outputs=[c["inference_btn"], c["cvat_btn"]]
     )

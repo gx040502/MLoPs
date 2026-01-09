@@ -10,38 +10,42 @@ from src.ModelManager.DBmanager import DBManager
 
 def create_tab(app):
     with gr.Tab("🤖 Pre-Trained Models") as tab:
+        gr.Markdown("### 📂 Your Custom Models")
         with gr.Column():
             
             with gr.Row():
-                # Left Column: Add Custom Model
                 with gr.Column(scale=1):
-                    gr.Markdown("### ➕ Add Custom Model")
-                    model_uploader = gr.File(
-                        label="Upload .pt file",
-                        file_types=[".pt"],
-                        height=207
-                    )
-                    model_name_input = gr.Textbox(
-                        label="Model Name", 
-                        placeholder="e.g modelABC"
-                    )
-                    upload_model_status = gr.Markdown(
-                        value="",
-                        visible=True
-                    )
-                
-                # Right Column: Model Selection and Actions
-                with gr.Column(scale=1):
-                    gr.Markdown("### 📂 Select Model")
                     own_model_dropdown = gr.Dropdown(
                         label="Select Model",
                         choices=[],
                         interactive=True
                     )
                     with gr.Row():
-                        upload_model_btn = gr.Button("📤 Upload Model", variant="primary", elem_id="btn")
                         own_delete_btn = gr.Button("🗑️ Delete Model", elem_id="del_btn", visible=False)
             
+                with gr.Column(scale=1):
+                    with gr.Row():
+                        model_uploader = gr.File(
+                            label="Upload your custom model (.pt)",
+                            file_types=[".pt"],
+                            height=120
+                        )
+                    with gr.Row(scale=1):
+                        with gr.Column(scale=1):
+                            model_name_input = gr.Textbox(
+                                label="Model Name", 
+                                placeholder="e.g modelABC"
+                            )
+
+                        with gr.Column(scale=1):
+                            upload_model_btn = gr.Button("📤 Upload Model", variant="primary", elem_id="btn")
+
+                            upload_model_status = gr.Markdown(
+                                value="",
+                                visible=True
+                            )
+                    
+                # Right Column: Model Selection and Actions
             # Model Details Accordion (spans full width below)
             with gr.Accordion("📊 Model Details", open=False):
                 own_model_details = gr.HTML(
