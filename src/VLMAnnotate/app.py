@@ -1074,12 +1074,17 @@ class APP():
         coco_builder.save_json(Path(coco_builder.directories['annotations'])/'instances_Train.json')
         shutil.make_archive(coco_builder.directories['base'], 'zip', coco_builder.directories['base'])
 
+        # Get annotated images directory for gallery display
+        annotated_images_dir = Path(coco_builder.directories['annotated_images'])
+        print(annotated_images_dir)
+        
         return (
             f"<div style='padding: var(--size-2); border: 1px solid var(--block-border-color); "
             f"background: var(--input-background-fill); border-radius: var(--container-radius); "
             f"color: var(--body-text-color); min-height: 80px;'>"
             f"Inference completed on {len(imgs)} images.<br>Results saved to '<i>{output_dir}</i>'."
-            f"</div>"
+            f"</div>",
+            str(annotated_images_dir)  # Return path for gallery
         )
     # -------------------------------------------------------------------------
     #                         CVAT LOGIC

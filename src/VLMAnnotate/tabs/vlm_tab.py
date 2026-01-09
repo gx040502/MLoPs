@@ -1,7 +1,8 @@
 import gradio as gr
 from src.VLMAnnotate.ui_logic import load_selected_img, get_dataset_images_for_gallery
 from src.VLMAnnotate.tabs.upload_tab import create_upload_components, setup_upload_events
-
+from pathlib import Path
+import os
 def create_tab(app):
     with gr.Tab("📝 VLM Annotation", id="vlm_tab") as tab:
         # ============================================================
@@ -100,6 +101,18 @@ def create_tab(app):
                         "Ready for inference on dataset</div>"
                     )
                 )
+                
+                # Hidden textbox to store the annotated images directory path
+                annotated_dir_path = gr.Textbox(visible=False)
+                
+                # Gallery to display all annotated images
+                annotated_gallery = gr.Gallery(
+                    label="Annotated Images",
+                    show_label=True,
+                    columns=4,
+                    height= 150, 
+                    visible=False
+                )
 
 
                 cvat_btn = gr.Button("Create CVAT Project and Task", visible=False, variant="primary")
@@ -121,6 +134,8 @@ def create_tab(app):
         "vlm_output_image": vlm_output_image,
         "inference_btn": inference_btn,
         "inference_output": inference_output,
+        "annotated_dir_path": annotated_dir_path,
+        "annotated_gallery": annotated_gallery,
         "cvat_btn": cvat_btn,
         "detection_info": detection_info,
         "raw_output": raw_output
@@ -145,12 +160,14 @@ def setup_events(app, components, all_components):
             return [
                 gr.Button(visible=True),   # Keep inference button visible
                 gr.Button(visible=False),  # Keep CVAT button hidden
+                gr.Gallery(visible=False)
             ]
         else:
             # Inference succeeded - swap buttons
             return [
                 gr.Button(visible=False),  # Hide inference button
                 gr.Button(visible=True),   # Show CVAT button
+                gr.Gallery(visible=True)
             ]
 
     def on_gallery_select(evt: gr.SelectData): 
@@ -172,14 +189,36 @@ def setup_events(app, components, all_components):
         outputs=[c["vlm_image_input"], c["vlm_text_input"], c["vlm_confidence_slider"], c["vlm_output_image"], c["detection_info"], c["raw_output"]]
     )
 
+    def load_annotated_images(annotated_dir):
+        """Load all images from the annotated images directory for gallery display"""
+        if not annotated_dir or annotated_dir == "":
+            return []  # Return empty list for gallery
+        
+        dir_path = Path(annotated_dir)
+        print(dir_path)
+        
+        if not dir_path.exists():
+            return []  # Return empty list
+        
+        images = []
+        valid_ext = ('.png', '.jpg', '.jpeg', '.bmp', '.gif')
+        for f in sorted(os.listdir(dir_path)):
+            if f.lower().endswith(valid_ext):
+                images.append(os.path.join(dir_path, f))
+        return images
+
     c["inference_btn"].click(
         fn=app.inference_dataset,
         inputs=[c["vlm_text_input"], c["vlm_confidence_slider"], c["inference_format"]],
-        outputs=[c["inference_output"]]
+        outputs=[c["inference_output"], c["annotated_dir_path"]]  # Store dir path in hidden textbox
+    ).then(
+        fn=load_annotated_images,
+        inputs=[c["annotated_dir_path"]],  # Read dir path from hidden textbox
+        outputs=[c["annotated_gallery"]]    # Update gallery with image list
     ).then(
         fn=refresh_cvat_ui,
         inputs=[c["inference_output"]],
-        outputs=[c["inference_btn"], c["cvat_btn"]]
+        outputs=[c["inference_btn"], c["cvat_btn"], c["annotated_gallery"]]
     )
 
     c["cvat_btn"].click(
@@ -187,7 +226,6 @@ def setup_events(app, components, all_components):
         inputs=[],
         outputs=[c["inference_output"]]
     ).then(
-        fn=lambda: [gr.Button(visible=True), gr.Button(visible=False)],
         fn=lambda: [gr.Button(visible=True), gr.Button(visible=False)],
         outputs=[c["inference_btn"], c["cvat_btn"]]
     )

@@ -2,8 +2,10 @@ import gradio as gr
 import os
 import threading
 import time
+
 import shutil
 from pathlib import Path
+from datetime import datetime, timedelta
 from . import utils
 
 from .app import APP
@@ -27,16 +29,25 @@ def cleanup_gradio_tmp():
             print(f"⚠️ Error cleaning .gradio_tmp: {e}")
 
 def start_cleanup_timer():
-    """Run cleanup every 10 minutes in background"""
+    """Run cleanup once daily at 12 AM (midnight) in background"""
     while True:
-        time.sleep(600)  # 600 seconds = 10 minutes
+        now = datetime.now()
+        # Calculate next midnight
+        next_run = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Calculate delay in seconds
+        delay = (next_run - now).total_seconds()
+        
+        print(f"🧹 Cleanup scheduled in {delay/3600:.2f} hours (at midnight)")
+        time.sleep(delay)
+        
         cleanup_gradio_tmp()
  
 def main():
     # Start background cleanup thread
     cleanup_thread = threading.Thread(target=start_cleanup_timer, daemon=True)
     cleanup_thread.start()
-    print("🧹 Started automatic cleanup of .gradio_tmp (every 10 minutes)")
+    print("🧹 Started automatic cleanup of .gradio_tmp (Daily at 12 AM)")
     
     # Initialize the app
     model_id = "IDEA-Research/grounding-dino-base"
