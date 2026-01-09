@@ -170,7 +170,7 @@ def setup_events(app, components, all_components):
         inputs=[c["vlm_text_input"], c["vlm_confidence_slider"], c["inference_format"]],
         outputs=[c["inference_output"]]
     ).then(
-        fn=lambda _: refresh_cvat_ui(),
+        fn=lambda: refresh_cvat_ui(),
         outputs=[c["inference_btn"], c["cvat_btn"]]
     )
 
@@ -179,7 +179,7 @@ def setup_events(app, components, all_components):
         inputs=[],
         outputs=[c["inference_output"]]
     ).then(
-        fn=lambda _: [gr.Button(visible=True), gr.Button(visible=False)],
+        fn=lambda: [gr.Button(visible=True), gr.Button(visible=False)],
         outputs=[c["inference_btn"], c["cvat_btn"]]
     )
     

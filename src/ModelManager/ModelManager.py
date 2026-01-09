@@ -326,12 +326,12 @@ class ModelManager:
                     import traceback
                     traceback.print_exc()
 
-                return True, msg
+                return True, msg, best_model_path
             else:
-                return False, msg
+                return False, msg, None
 
         except Exception as e:
-            return False, f"Error invoking training: {str(e)}"
+            return False, f"Error invoking training: {str(e)}", None
     def get_trained_projects(self):
         return self.db_manager.get_unique_projects()
     

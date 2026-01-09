@@ -63,8 +63,9 @@ def create_tab(app):
                 with gr.Column():
                     gr.Markdown("### 🖼️ Run Prediction")
                     own_input_img = gr.File(
-                        label="Input Image or Video", 
-                        file_types=["image", "video"],
+                        label="Input Images (Batch), Zip (Images only), or Video", 
+                        file_types=["image", "video", ".zip"],
+                        file_count="multiple",
                         height=400
                     )
                     with gr.Row():
@@ -81,8 +82,17 @@ def create_tab(app):
                 
                 with gr.Column():
                     gr.Markdown("### 📊 Prediction Result")
-                    own_output_preview = gr.Image(label="Prediction Preview", type="pil", height=400, visible=False)
+                    own_output_gallery = gr.Gallery(
+                        label="Prediction Results", 
+                        show_label=True, 
+                        elem_id="own_output_gallery", 
+                        columns=[3], 
+                        rows=[2], 
+                        height=400, 
+                        object_fit="contain"
+                    )
                     own_output_video = gr.Video(label="Prediction Result Video", height=400, visible=False)
+                    own_output_file = gr.File(label="Download Results (Zip)", visible=False)
                     with gr.Accordion("📋 Detection Details", open=False):
                         own_result_details = gr.Code(label="Detection Details", language="json", elem_id="detection_details_code", lines=10)
 
@@ -99,8 +109,9 @@ def create_tab(app):
         "own_conf_slider": own_conf_slider,
         "own_iou_slider": own_iou_slider,
         "own_predict_btn": own_predict_btn,
-        "own_output_preview": own_output_preview,
+        "own_output_gallery": own_output_gallery,
         "own_output_video": own_output_video,
+        "own_output_file": own_output_file,
         "own_result_details": own_result_details
     }
 
@@ -141,47 +152,115 @@ def setup_events(app, components, all_components):
         
         return message, updated_dropdown, ""
     
-    def predict_own_model(model_id, input_file, conf, iou):
-        if not model_id or not input_file:
-            # Hide both outputs on error
-            return gr.update(visible=False), gr.update(visible=False), "Please select a model and upload media"
+    def predict_own_model(model_id, input_files, conf, iou):
+        if not model_id or not input_files:
+            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), "Please select a model and upload media"
+        
+        # Handle both single file (dict) and multiple files (list) from Gradio
+        if isinstance(input_files, dict):
+            # Single file upload returns a dict with 'path' key
+            input_files = [input_files.get('path') or input_files]
+        elif not isinstance(input_files, list):
+            input_files = [input_files]
+        
+        # Extract paths if items are dicts
+        file_paths = []
+        for item in input_files:
+            if isinstance(item, dict):
+                file_paths.append(item.get('path', item))
+            else:
+                file_paths.append(item)
+        input_files = file_paths
         
         model = model_manager.load_model(model_id)
         if model is None:
-             return gr.update(visible=False), gr.update(visible=False), json.dumps({"error": f"Failed to load model from path: {model_info.get('storage_path')}"})
-        file_ext = Path(input_file).suffix.lower()
+             return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": f"Failed to load model ID: {model_id}"})
+             
         video_extensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm']
         
-        try:
-            if file_ext in video_extensions:
-                # Process video
-                print(f"Processing video: {file_ext}")
-                output_path, details = model_manager.inference_video(
-                    input_file, model, conf, iou
-                )
-                
-                # Show File, Hide Image
-                return gr.update(visible=False), gr.update(visible=True, value=output_path), details
-            else:
-                # Process image
-                print(f"Processing image: {file_ext}")
-                image = Image.open(input_file)
-    
-                output_img, details_json = model_manager.inference_image(
-                    image=image,model=model, conf=conf, iou=iou
-                )
-                
-                # Show Image, Hide File (pass PIL image directly)
-                return gr.update(visible=True, value=output_img), gr.update(visible=False), details_json
+        import zipfile
+        import tempfile
+        import shutil
+        import os
+        import cv2
+
+        # 1. Single Zip File
+        if len(input_files) == 1 and input_files[0].lower().endswith('.zip'):
+             zip_path = input_files[0]
+             try:
+                 temp_dir = tempfile.mkdtemp()
+                 extract_dir = os.path.join(temp_dir, "input")
+                 output_dir = os.path.join(temp_dir, "output")
+                 os.makedirs(extract_dir, exist_ok=True)
+                 os.makedirs(output_dir, exist_ok=True)
+                 
+                 with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                     zip_ref.extractall(extract_dir)
+                     
+                 processed_count = 0
+                 for root, dirs, files in os.walk(extract_dir):
+                     for file in files:
+                         if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                             img_path = os.path.join(root, file)
+                             try:
+                                 image = Image.open(img_path)
+                                 res_img, _ = model_manager.inference_image(image, model, conf, iou)
+                                 save_path = os.path.join(output_dir, file)
+                                 
+                                 if isinstance(res_img, Image.Image):
+                                     res_img.save(save_path)
+                                 else:
+                                     if hasattr(res_img, 'shape'):
+                                         res_img_bgr = cv2.cvtColor(res_img, cv2.COLOR_RGB2BGR)
+                                         cv2.imwrite(save_path, res_img_bgr)
+                                 processed_count += 1
+                             except Exception as e:
+                                 print(f"Failed to process {file}: {e}")
+                 
+                 if processed_count == 0:
+                     return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": "No valid images found in zip"})
+
+                 output_zip = os.path.join(temp_dir, f"predictions_{Path(zip_path).name}")
+                 shutil.make_archive(output_zip.replace('.zip', ''), 'zip', output_dir)
+                 
+                 return gr.update(visible=False), gr.update(visible=False), gr.update(value=output_zip, visible=True), json.dumps({"info": f"Processed {processed_count} images from zip"})
+                 
+             except Exception as e:
+                 return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": str(e)})
+
+        # 2. Single Video File
+        if len(input_files) == 1 and Path(input_files[0]).suffix.lower() in video_extensions:
+            video_path = input_files[0]
+            try:
+                print(f"Processing video: {video_path}")
+                output_path, details = model_manager.inference_video(video_path, model, conf, iou)
+                if not output_path:
+                    return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), details
+                return gr.update(visible=False), gr.update(visible=True, value=output_path), gr.update(visible=False), details
+            except Exception as e:
+                 print(f"Prediction Error: {e}")
+                 return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), f"Error: {str(e)}"
+
+        # 3. Batch Images
+        gallery_results = []
+        for file_path in input_files:
+            try:
+                if not file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                    continue
+                image = Image.open(file_path)
+                output_img, _ = model_manager.inference_image(image=image, model=model, conf=conf, iou=iou)
+                gallery_results.append(output_img)
+            except Exception as e:
+                print(f"Error processing {file_path}: {e}")
         
-        except Exception as e:
-             # Hide both on error
-             print(f"Prediction Error: {e}")
-             return gr.update(visible=False), gr.update(visible=False), f"Error: {str(e)}"
+        if not gallery_results:
+             return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": "No valid images processed"})
+             
+        return gr.update(value=gallery_results, visible=True), gr.update(visible=False), gr.update(visible=False), json.dumps({"info": f"Processed {len(gallery_results)} images"}, indent=2)
 
     # --- Event Handlers ---
     c["tab"].select(
-        fn=lambda _: app.cleanup_preview(), outputs=None
+        fn=lambda: app.cleanup_preview(), outputs=None
     ).then(
         fn=refresh_own_model_dropdown,
         outputs=[c["own_model_dropdown"]]
@@ -213,8 +292,9 @@ def setup_events(app, components, all_components):
         fn=predict_own_model,
         inputs=[c["own_model_dropdown"], c["own_input_img"], c["own_conf_slider"], c["own_iou_slider"]],
         outputs=[
-            c["own_output_preview"], # Image component
-            c["own_output_video"],   # Video component
+            c["own_output_gallery"], 
+            c["own_output_video"],   
+            c["own_output_file"],
             c["own_result_details"]
         ]
     )

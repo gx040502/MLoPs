@@ -199,6 +199,14 @@ def create_tab(app):
             # ETA Components
             eta_output = gr.Markdown("⏳ Estimated Time: Waiting to start...", visible=False)
             current_training_project_name = gr.State(None) 
+
+            download_model_btn = gr.DownloadButton(
+                label="Download Model", 
+                variant="primary", 
+                size="lg", 
+                elem_id="btn", 
+                visible=False
+            )
             
             filename_input = gr.Textbox(
                 label="Custom Output Filename (Optional but this will be the train model name)", 
@@ -235,7 +243,8 @@ def create_tab(app):
         "training_log": training_log,
         "eta_output": eta_output,
         "current_training_project_name": current_training_project_name,
-        "filename_input": filename_input
+        "filename_input": filename_input,
+        "download_model_btn": download_model_btn
     }
 
 def setup_events(app, components, all_components):
@@ -266,7 +275,7 @@ def setup_events(app, components, all_components):
         
         if not success:
             msg = res # Error message from manager
-            yield f"❌ Format Failed: {msg}", "❌ Format Failed", None
+            yield f"❌ Format Failed: {msg}", "❌ Format Failed", None, gr.update(visible=False), gr.update(visible=False)
             return
             
         path = res # This is a Path object to the dataset directory
@@ -282,7 +291,7 @@ def setup_events(app, components, all_components):
         else:
             stats_str += f"Error inspecting stats: {stats.get('message')}\n"
                         
-        yield f"{msg}\n\n🚀 Training Started...", stats_str, None
+        yield f"{msg}\n\n🚀 Training Started...", stats_str, None, gr.update(visible=False), gr.update(visible=True)
 
         # 2. Augmentation Params
         aug_args = {
@@ -310,10 +319,10 @@ def setup_events(app, components, all_components):
             if path and hasattr(path, 'name'):
                  project_name = path.name
                         
-        yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name
+        yield "🚀 Training Started... ETA should appear shortly.", stats_str, project_name, gr.update(visible=False), gr.update(visible=True)
         
         # Call Train Model from Model Manager
-        success_train, msg_train = manager.train_model(
+        success_train, msg_train, best_model_path = manager.train_model(
             project_id=project_id, 
             model_name=model, 
             epochs=epochs, 
@@ -326,13 +335,20 @@ def setup_events(app, components, all_components):
             **aug_args
         )
 
+        btn_update = gr.update(visible=False)
         if success_train:
              result = f"✅ {msg_train}"
+             if best_model_path and best_model_path.exists():
+                 btn_update = gr.update(value=str(best_model_path), visible=True, interactive=True)
         else:
              result = f"❌ {msg_train}"
 
-        yield result, stats_str, None
-        
+        yield result, stats_str, None, btn_update, gr.update(visible=False)
+    
+    def download_model(best_model_path):
+        if not best_model_path: return gr.update(visible=False)
+        return gr.update(visible=True)
+    
     def check_training_status(project_name): 
         if not project_name: return gr.update(visible=False)
                     
@@ -421,7 +437,7 @@ def setup_events(app, components, all_components):
             c["mosaic"], c["mixup"], c["cutmix"], c["copy_paste"],
             c["erasing"]
         ],
-        outputs=[c["training_log"], c["dataset_log"], c["current_training_project_name"]]
+        outputs=[c["training_log"], c["dataset_log"], c["current_training_project_name"], c["download_model_btn"], c["eta_output"]]
     )
     
     c["train_config_checkbox"].change(

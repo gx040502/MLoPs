@@ -29,4 +29,4 @@ def create_tab(app):
 
 def setup_events(app, components, all_components):
     c = components
-    c["tab"].select(fn=lambda _: app.cleanup_preview(), outputs=None)
+    c["tab"].select(fn=lambda: app.cleanup_preview(), outputs=None)
