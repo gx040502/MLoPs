@@ -1,8 +1,8 @@
 import os
 from pathlib import Path
 from ultralytics import YOLO, settings
-
-import utils
+import time
+import json
 
 def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, aug_params=None, format_name="Ultralytics YOLO Detection 1.0"):
     """
@@ -22,8 +22,10 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
     print(f"Starting training for project: {project_name}")
     print(f"Model: {model_path}, Epochs: {epochs}, Imgsz: {imgsz}, Manual Aug: {manual_aug}, Format: {format_name}")
 
-    # Initialize ProjectManager to get paths
-    project = utils.ProjectManager(project_name)
+    base_dir = Path(__file__).resolve().parents[2].joinpath('data')
+    dataset_dir = base_dir / 'datasets' / project_name
+    output_dir = base_dir / 'models/train' / project_name
+    output_dir.mkdir(parents=True, exist_ok=True)
     model_output_name = model_path.split("/")[-1].split(".")[0]
     
     # We no longer update global settings to avoid side-effects/stale configs
@@ -34,9 +36,6 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         model = YOLO(model_path)
 
         # --- ETA CALLBACK DEFINITION ---
-        import time
-        import json
-
         class TrainingCallback:
             def __init__(self, total_epochs, project_dir):
                 self.total_epochs = total_epochs
@@ -87,7 +86,7 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         # We want the status file to be easily accessible. Let's put it in the project root (Dataset/Task_706)
         # project.dataset_dir is Dataset/Task_706
         
-        callback = TrainingCallback(epochs, project.dataset_dir)
+        callback = TrainingCallback(epochs, dataset_dir.as_posix())
         
         # Register callbacks
         model.add_callback("on_train_epoch_start", callback.on_train_epoch_start)
@@ -96,16 +95,11 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         
         # Determine data path based on format
         is_classification = "Classification" in format_name
-        if is_classification:
-            # Classification: Pass directory path (not data.yaml)
-            data_path = project.dataset_dir
-        else:
-            # Detection/Segmentation: Pass data.yaml file
-            data_path = project.dataset_dir / 'data.yaml'
+        data_path = dataset_dir if is_classification else dataset_dir / 'data.yaml'
         
         # Prepare training arguments
         train_args = {
-            'project': project.train_dir,           # Explicitly set output dir
+            'project': output_dir.as_posix(),           # Explicitly set output dir
             'data': data_path,                      # Directory for classification, yaml for others
             'device': 0,
             'batch': -1,
@@ -124,9 +118,9 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         
         # Run training
         results = model.train(**train_args)
-        
-        print(f"Training completed. Results saved to {project.train_dir}")
-        return True, f"Training completed successfully! Saved to {project.train_dir}"
+
+        print(f"Training completed. Results saved to {output_dir}")
+        return True, f"Training completed successfully! Saved to {output_dir}"
         
     except Exception as e:
         print(f"Training failed: {e}")
@@ -134,8 +128,8 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
 
 if __name__ == '__main__':
     # Test run
-    # Ensure you have a dataset named 'semiconductor7' set up if you run this directly
-    run_training('semiconductor7', 'models/pre_trained/detection/yolov8n.pt', 1)   
+    # Ensure you have a dataset named 'pipeline-dataset_107' set up if you run this directly
+    run_training('pipeline-dataset_107', 'models/pre_trained/detection/yolov8n.pt', 1)   
 
     
 

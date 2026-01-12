@@ -2,14 +2,14 @@ import gradio as gr
 import os
 import threading
 import time
-
 import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
-from . import utils
 
-from .app import APP
+from AI_PROJECT.src.all_utils import model as utils
+from AI_PROJECT.src.all_utils.app import APP
 from .page_datasets import load_dataset_interface
+
 os.environ["GRADIO_TEMP_DIR"] = ".gradio_tmp/"
 os.makedirs(".gradio_tmp/", exist_ok=True)
 

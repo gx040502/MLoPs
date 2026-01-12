@@ -1,6 +1,6 @@
 import gradio as gr
-from src.ModelManager.ModelManager import ModelManager
-from src.ModelManager import model_trainer
+from AI_PROJECT.src.ModelManager.ModelManager import ModelManager
+from AI_PROJECT.src.ModelManager import model_trainer
 
 def create_tab(app):
     model_manager = ModelManager("database.db")
@@ -357,7 +357,7 @@ def setup_events(app, components, all_components):
 
         # Update to point to correct location relative to ModelManager
         
-        status_path = Path(model_trainer.__file__).parent / "datasets" / project_name / "training_status.json"
+        status_path = Path(model_trainer.__file__).parents[2] / "data" / "datasets" / project_name / "training_status.json"
                     
         if not status_path.exists():
             return gr.update(value=f"⏳ Estimated Time: Initializing... (Waiting for {project_name})", visible=True)

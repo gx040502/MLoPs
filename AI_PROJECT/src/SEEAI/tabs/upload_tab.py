@@ -1,6 +1,6 @@
 import gradio as gr
-from src.VLMAnnotate.ui_logic import refresh_datasets_state
-from src.VLMAnnotate.ui_logic import load_selected_img, get_dataset_images_for_gallery
+from AI_PROJECT.src.all_utils.ui_logic import refresh_datasets_state
+from AI_PROJECT.src.all_utils.ui_logic import load_selected_img, get_dataset_images_for_gallery
 def create_upload_components(app):
     """
     Creates the upload UI components without wrapping them in a Tab.

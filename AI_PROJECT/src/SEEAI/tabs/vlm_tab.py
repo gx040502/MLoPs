@@ -1,10 +1,10 @@
 import gradio as gr
-from src.VLMAnnotate.ui_logic import load_selected_img, get_dataset_images_for_gallery
-from src.VLMAnnotate.tabs.upload_tab import create_upload_components, setup_upload_events
+from AI_PROJECT.src.all_utils.ui_logic import load_selected_img, get_dataset_images_for_gallery
+from AI_PROJECT.src.SEEAI.tabs.upload_tab import create_upload_components, setup_upload_events
 from pathlib import Path
 import os
 def create_tab(app):
-    with gr.Tab("📝 VLM Annotation", id="vlm_tab") as tab:
+    with gr.Tab("✨ Auto Annotation", id="vlm_tab") as tab:
         # ============================================================
         # Upload Section (embedded from upload_tab)
         # ============================================================

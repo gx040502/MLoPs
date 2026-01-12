@@ -9,7 +9,7 @@ from cvat_sdk.api_client import Configuration, ApiClient, models
 import yaml
 from .DBmanager import DBManager
 from . import model_trainer
-from .config import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
+from AI_PROJECT.config.config import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
 from ultralytics import YOLO
 import numpy as np
 import gradio as gr
@@ -80,8 +80,8 @@ class ModelManager:
                     project_name = f"{project.name}_{project_id}"
                 
                 
-                # Base directory for ModelManager datasets
-                base_dir = Path(__file__).resolve().parent
+                # Base directory for ModelManager datasets (../../data)
+                base_dir = Path(__file__).resolve().parents[2].joinpath('data')
                 
                 # Zip file goes to project root 'dataset' folder as requested
                 zip_path = base_dir / 'datasets' / f"{project_name}.zip"
@@ -249,7 +249,7 @@ class ModelManager:
         try:
             # Import train module (assumed to be in path or project root)
             import sys
-            # Attempt to add project root to path if not present, assuming this file is in src/ModelManager
+            # Attempt to add project root to path if not present (../../)
             project_root = str(Path(__file__).resolve().parents[2])
             if project_root not in sys.path:
                 sys.path.append(project_root)
@@ -264,7 +264,7 @@ class ModelManager:
                  sub_dir = "classification"
 
             # Assuming standard model naming convention in models/pre_trained/
-            base_dir = Path(__file__).resolve().parent
+            base_dir = Path(__file__).resolve().parents[2].joinpath('data')
             model_file = base_dir / "models/pre_trained" / sub_dir / model_name
             
             print(f"Starting training with model: {model_file}")
@@ -300,7 +300,7 @@ class ModelManager:
                         # We use the logic from app.py to find the latest run directory in models/train/{project_name}
                         # because model_trainer.run_training returns a message string, not a clean path.
                         
-                        base_dir = Path(__file__).resolve().parent
+                        base_dir = Path(__file__).resolve().parents[2].joinpath('data')
                         project_train_dir = base_dir / "models/train" / project_name
                         best_model_path = None
                         
@@ -468,7 +468,7 @@ class ModelManager:
         """
         try:
             # 1. Prepare directory
-            base_dir = Path(__file__).resolve().parent
+            base_dir = Path(__file__).resolve().parents[2].joinpath('data')
             upload_dir = base_dir / "models/uploaded"
             upload_dir.mkdir(parents=True, exist_ok=True)
             

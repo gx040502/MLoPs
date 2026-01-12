@@ -1,7 +1,7 @@
 import gradio as gr
 import json
-from src.ModelManager.ModelManager import ModelManager
-from src.ModelManager.DBmanager import DBManager
+from AI_PROJECT.src.ModelManager.ModelManager import ModelManager
+from AI_PROJECT.src.ModelManager.DBmanager import DBManager
 from datetime import datetime
 from pathlib import Path
 from PIL import Image
@@ -112,16 +112,16 @@ def create_tab(app):
                         file_count="multiple",
                         height=400
                     )
-                        
-                    conf_slider = gr.Slider(
-                        minimum=0.01, maximum=1.0, value=0.25, 
-                        step=0.01, label="Confidence Threshold"
-                    )
+                    with gr.Row():
+                        conf_slider = gr.Slider(
+                            minimum=0.01, maximum=1.0, value=0.25, 
+                            step=0.01, label="Confidence Threshold"
+                        )
                     
-                    iou_slider = gr.Slider(
-                        minimum=0.01, maximum=1.0, value=0.45, 
-                        step=0.01, label="IOU Threshold"
-                    )
+                        iou_slider = gr.Slider(
+                            minimum=0.01, maximum=1.0, value=0.45, 
+                            step=0.01, label="IOU Threshold"
+                        )
 
                     output_ext = gr.Dropdown(
                         label="Output Extension",
@@ -390,8 +390,6 @@ def setup_events(app, components, all_components):
                     
                     # output_image might be numpy array (RGB) from plot()
                     # Gallery accepts numpy arrays (RGB)
-                    gallery_results.append(output_image)
-                    
                     # Save for download
                     path_obj = Path(file_path)
                     if out_ext.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
@@ -400,13 +398,16 @@ def setup_events(app, components, all_components):
                          save_name = path_obj.name
                          
                     save_path = os.path.join(output_dir, save_name)
-                    
+
                     if isinstance(output_image, Image.Image):
                         output_image.save(save_path)
                     else:
                         if hasattr(output_image, 'shape'):
                             res_img_bgr = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
                             cv2.imwrite(save_path, res_img_bgr)
+                    
+                    # Add path to gallery so it respects extension
+                    gallery_results.append(save_path)
                     
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
@@ -433,10 +434,69 @@ def setup_events(app, components, all_components):
         # Return a list because input_file has file_count="multiple"
         return [evt.value["image"]["path"]]
 
+    def update_output_choices(files):
+        """Update output extension dropdown based on input file types"""
+        if not files:
+            # Default to all or keep current? Let's reset to defaults
+            return gr.update(choices=[".jpg", ".png", ".bmp", ".webp", ".mp4", ".mkv", ".webm"], value=".jpg")
+            
+        # Check file types
+        has_video = False
+        has_image = False
+        
+        video_exts = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
+        image_exts = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'}
+        
+        # files is a list of file paths (temp paths)
+        # However, input_file with file_count="multiple" returns list of paths
+        # BUT if files is None it's handled.
+        
+        for f in files:
+            ext = Path(f).suffix.lower()
+            if ext in video_exts:
+                has_video = True
+            elif ext in image_exts:
+                has_image = True
+            elif ext == '.zip':
+                # Zip likely contains images, treat as image
+                has_image = True
+        
+        if has_video:
+            # If video is present, likely want video output. 
+            # If mixed, predict logic usually handles one or the other priority.
+            # Predict logic: 
+            # 1. Zip -> Image output
+            # 2. Single Video -> Video output
+            # 3. Multiple images -> Image output
+            
+            # If single video, show video options
+            if len(files) == 1 and Path(files[0]).suffix.lower() in video_exts:
+                return gr.update(choices=[".mp4", ".mkv", ".webm"], value=".mp4")
+            
+            # If multiple files and one is video... simpler to fallback to all? 
+            # Or if mixed, user probably shouldn't do that.
+            # But let's support "Contains Video" -> Video types?
+            # Actually strictly:
+            return gr.update(choices=[".mp4", ".mkv", ".webm"], value=".mp4")
+
+        if has_image:
+            return gr.update(choices=[".jpg", ".png", ".bmp", ".webp"], value=".jpg")
+            
+        # Fallback
+        return gr.update(choices=[".jpg", ".png", ".bmp", ".webp", ".mp4", ".mkv", ".webm"], value=".jpg")
+
     # --- Event Handlers ---
     c["tab"].select(
         fn=on_predict_tab_select, 
         outputs=[c["project_dropdown"]]
+    )
+    
+    # New handler for file upload
+    # New handler for file upload
+    c["input_file"].change(
+        fn=update_output_choices,
+        inputs=[c["input_file"]],
+        outputs=[c["output_ext"]]
     )
     
     c["project_dropdown"].change(

@@ -5,8 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from PIL import Image
 import tempfile
-from src.ModelManager.ModelManager import ModelManager
-from src.ModelManager.DBmanager import DBManager
+from AI_PROJECT.src.ModelManager.ModelManager import ModelManager
+from AI_PROJECT.src.ModelManager.DBmanager import DBManager
 
 def create_tab(app):
     with gr.Tab("🤖 Pre-Trained Models") as tab:
@@ -294,8 +294,7 @@ def setup_events(app, components, all_components):
                     
                     image = Image.open(file_path)
                     output_img, _ = model_manager.inference_image(image=image, model=model, conf=conf, iou=iou)
-                    gallery_results.append(output_img)
-                    
+
                     # Save for download
                     # Determine save name based on chosen extension
                     path_obj = Path(file_path)
@@ -312,7 +311,7 @@ def setup_events(app, components, all_components):
                         if hasattr(output_img, 'shape'):
                             res_img_bgr = cv2.cvtColor(output_img, cv2.COLOR_RGB2BGR)
                             cv2.imwrite(save_path, res_img_bgr)
-                    
+                    gallery_results.append(save_path)
                     processed_count += 1
                 except Exception as e:
                     print(f"Error processing {file_path}: {e}")
@@ -330,12 +329,52 @@ def setup_events(app, components, all_components):
         except Exception as e:
              return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": str(e)})
 
+    def update_output_choices(files):
+        """Update output extension dropdown based on input file types"""
+        if not files:
+            # Revert to all choices if no file
+            return gr.update(choices=[".jpg", ".png", ".bmp", ".webp", ".mp4", ".mkv", ".webm"], value=".jpg")
+            
+        # Check file types
+        has_video = False
+        has_image = False
+        
+        video_exts = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
+        image_exts = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp'}
+        
+        for f in files:
+            ext = Path(f).suffix.lower()
+            if ext in video_exts:
+                has_video = True
+            elif ext in image_exts:
+                has_image = True
+            elif ext == '.zip':
+                has_image = True
+        
+        if has_video:
+            # If single video, show video options
+            if len(files) == 1 and Path(files[0]).suffix.lower() in video_exts:
+                return gr.update(choices=[".mp4", ".mkv", ".webm"], value=".mp4")
+            return gr.update(choices=[".mp4", ".mkv", ".webm"], value=".mp4")
+
+        if has_image:
+            return gr.update(choices=[".jpg", ".png", ".bmp", ".webp"], value=".jpg")
+            
+        return gr.update(choices=[".jpg", ".png", ".bmp", ".webp", ".mp4", ".mkv", ".webm"], value=".jpg")
+
     # --- Event Handlers ---
     c["tab"].select(
         fn=lambda: app.cleanup_preview(), outputs=None
     ).then(
         fn=refresh_own_model_dropdown,
         outputs=[c["own_model_dropdown"]]
+    )
+    
+    # New handler for file upload
+    c["own_input_img"].change(
+        fn=update_output_choices,
+        inputs=[c["own_input_img"]],
+        outputs=[c["own_output_ext"]]
     )
     
     c["upload_model_btn"].click(
