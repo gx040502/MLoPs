@@ -122,6 +122,14 @@ def create_tab(app):
                         minimum=0.01, maximum=1.0, value=0.45, 
                         step=0.01, label="IOU Threshold"
                     )
+
+                    output_ext = gr.Dropdown(
+                        label="Output Extension",
+                        choices=[".jpg", ".png", ".bmp", ".webp", ".mp4", ".mkv", ".webm"],
+                        value=".jpg",
+                        interactive=True,
+                        info="Select image format for Zip/Batch or video format for Video input"
+                    )
                         
                     predict_btn = gr.Button("🚀 Predict", variant="primary", elem_id="btn")
                     
@@ -153,11 +161,10 @@ def create_tab(app):
         "plots_group": plots_group,
         "model_plots_gallery": model_plots_gallery,
         "test_gallery": test_gallery,
-        "test_gallery": test_gallery,
         "input_file": input_file,
         "conf_slider": conf_slider,
-        "conf_slider": conf_slider,
         "iou_slider": iou_slider,
+        "output_ext": output_ext,
         "predict_btn": predict_btn,
         "output_gallery": output_gallery,
         "output_video": output_video,
@@ -236,7 +243,7 @@ def setup_events(app, components, all_components):
             gr.update(visible=not is_classification)   # iou_slider
         )
 
-    def on_predict(model_id, input_files, conf, iou):
+    def on_predict(model_id, input_files, conf, iou, out_ext):
         """Run prediction using selected model."""
         # input_files is now a list of file paths (from gr.File(file_count="multiple"))
         # But if user uploads one file, it might be a single string if type="filepath"? 
@@ -307,7 +314,17 @@ def setup_events(app, components, all_components):
                                  # res_img is a PIL Image or numpy array?
                                  # Manager returns annotated_img (numpy array from plot()) usually, let's check.
                                  # If it is numpy, convert to BGR for cv2 save
+                                 # If it is numpy, convert to BGR for cv2 save
                                  save_path = os.path.join(output_dir, file)
+
+                                 # Determine save name based on chosen extension
+                                 file_path = Path(file)
+                                 if out_ext.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
+                                      save_name = file_path.stem + out_ext
+                                 else:
+                                      save_name = file 
+                                      
+                                 save_path = os.path.join(output_dir, save_name)
                                  
                                  if isinstance(res_img, Image.Image):
                                      res_img.save(save_path)
@@ -342,7 +359,10 @@ def setup_events(app, components, all_components):
         if len(input_files) == 1 and Path(input_files[0]).suffix.lower() in video_extensions:
             video_path = input_files[0]
             try:
-                output_path, details = model_manager.inference_video(video_path, model, conf, iou)
+                # Use passed out_ext if it's a video format, else default to .webm
+                video_ext = out_ext if out_ext.lower() in video_extensions or out_ext.lower() == '.webm' else '.webm'
+                
+                output_path, details = model_manager.inference_video(video_path, model, conf, iou, output_extension=video_ext)
                 if not output_path:
                     return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), details
                 return gr.update(visible=False), gr.update(value=output_path, visible=True), gr.update(visible=False), details
@@ -352,31 +372,58 @@ def setup_events(app, components, all_components):
         # 3. Multiple Images (Batch) -> Process All -> Return Gallery
         # Also handles single image
         gallery_results = []
-        details_list = []
-        
-        for file_path in input_files:
-            try:
-                # Basic check for image extension
-                if not file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
-                    continue
+        try:
+            temp_dir = tempfile.mkdtemp()
+            output_dir = os.path.join(temp_dir, "output")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            processed_count = 0
+            
+            for file_path in input_files:
+                try:
+                    # Basic check for image extension
+                    if not file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                        continue
+                        
+                    image = Image.open(file_path)
+                    output_image, _ = model_manager.inference_image(image, model, conf, iou)
                     
-                image = Image.open(file_path)
-                output_image, det = model_manager.inference_image(image, model, conf, iou)
-                
-                # output_image might be numpy array (RGB) from plot()
-                # Gallery accepts numpy arrays (RGB)
-                gallery_results.append(output_image)
-                # Parse details just for summary? Or keep last one?
-                # details_list.append(json.loads(det) if det else {})
-                
-            except Exception as e:
-                print(f"Error processing {file_path}: {e}")
-        
-        if not gallery_results:
-             return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": "No valid images processed"})
-             
-        # Return Gallery
-        return gr.update(value=gallery_results, visible=True), gr.update(visible=False), gr.update(visible=False), json.dumps({"info": f"Processed {len(gallery_results)} images"}, indent=2)
+                    # output_image might be numpy array (RGB) from plot()
+                    # Gallery accepts numpy arrays (RGB)
+                    gallery_results.append(output_image)
+                    
+                    # Save for download
+                    path_obj = Path(file_path)
+                    if out_ext.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
+                         save_name = path_obj.stem + out_ext
+                    else:
+                         save_name = path_obj.name
+                         
+                    save_path = os.path.join(output_dir, save_name)
+                    
+                    if isinstance(output_image, Image.Image):
+                        output_image.save(save_path)
+                    else:
+                        if hasattr(output_image, 'shape'):
+                            res_img_bgr = cv2.cvtColor(output_image, cv2.COLOR_RGB2BGR)
+                            cv2.imwrite(save_path, res_img_bgr)
+                    
+                except Exception as e:
+                    print(f"Error processing {file_path}: {e}")
+            
+            if not gallery_results:
+                 return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": "No valid images processed"})
+            
+            # Create zip for download
+            output_zip = os.path.join(temp_dir, f"batch_predictions")
+            shutil.make_archive(output_zip, 'zip', output_dir)
+            output_zip_path = output_zip + ".zip"
+                 
+            # Return Gallery and Zip
+            return gr.update(value=gallery_results, visible=True), gr.update(visible=False), gr.update(visible=True, value=output_zip_path), json.dumps({"info": f"Processed {len(gallery_results)} images"}, indent=2)
+
+        except Exception as e:
+             return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": str(e)})
 
     def toggle_plots_visibility(checked):
         return gr.update(visible=checked)
@@ -406,7 +453,7 @@ def setup_events(app, components, all_components):
     
     c["predict_btn"].click(
         fn=on_predict,
-        inputs=[c["model_dropdown"], c["input_file"], c["conf_slider"], c["iou_slider"]],
+        inputs=[c["model_dropdown"], c["input_file"], c["conf_slider"], c["iou_slider"], c["output_ext"]],
         outputs=[c["output_gallery"], c["output_video"], c["output_file"], c["result_details"]]
     )
     

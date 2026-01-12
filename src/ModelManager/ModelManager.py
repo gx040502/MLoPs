@@ -588,7 +588,7 @@ class ModelManager:
             print(f"Error during inference: {str(e)}")
             return None, None
 
-    def inference_video(self, video_path: str, model: YOLO, conf: float, iou: float, verbose: bool = False):
+    def inference_video(self, video_path: str, model: YOLO, conf: float, iou: float, output_extension: str = '.webm', verbose: bool = False):
         """Perform inference on a video file using the specified model."""
         try:
             if verbose: print(f"Running video inference on: {getattr(model, 'model_name', 'model')}")
@@ -604,17 +604,42 @@ class ModelManager:
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             
-            # Create temp output video (Use VP9/webm for browser compatibility)
-            output_path = Path(tempfile.mkdtemp()) / "prediction.webm"
+            # Ensure extension has dot
+            if not output_extension.startswith('.'):
+                output_extension = f".{output_extension}"
             
-            # Try VP9 codec first
-            fourcc = cv2.VideoWriter_fourcc(*'vp09') # VP9
+            # Codec mapping
+            codecs = {
+                '.mp4': 'mp4v',
+                '.avi': 'XVID',
+                '.mov': 'mp4v',
+                '.mkv': 'VP09',
+                '.webm': 'vp09'
+            }
+            
+            # Default to webm/vp09 if unknown
+            # For mp4, 'avc1' or 'h264' is better if available but 'mp4v' is safer for opencv default
+            # For webm, try vp09, fallback to VP80
+            
+            ext = output_extension.lower()
+            codec_str = codecs.get(ext, 'vp09')
+            
+            # Create temp output path
+            output_path = Path(tempfile.mkdtemp()) / f"prediction{ext}"
+            
+            fourcc = cv2.VideoWriter_fourcc(*codec_str)
             out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
             
             # Check if writer opened successfully
             if not out.isOpened():
-                print("VP9 codec failed, trying VP80...")
-                fourcc = cv2.VideoWriter_fourcc(*'VP80') # Fallback to VP8
+                print(f"Codec {codec_str} failed for {ext}, trying fallbacks...")
+                if ext == '.webm':
+                     fourcc = cv2.VideoWriter_fourcc(*'VP80')
+                elif ext == '.mp4':
+                     fourcc = cv2.VideoWriter_fourcc(*'avc1')
+                else:
+                     fourcc = cv2.VideoWriter_fourcc(*'MJPG') # Generic fallback
+                
                 out = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
             
             frame_count = 0

@@ -22,6 +22,8 @@ def create_tab(app):
                     )
                     with gr.Row():
                         own_delete_btn = gr.Button("🗑️ Delete Model", elem_id="del_btn", visible=False)
+                        confirm_delete_btn = gr.Button("✅ Are you sure?", variant="stop", visible=False)
+                        cancel_delete_btn = gr.Button("❌ Cancel", visible=False)
             
                 with gr.Column(scale=1):
                     with gr.Row():
@@ -81,6 +83,14 @@ def create_tab(app):
                             minimum=0.01, maximum=1.0, value=0.45, step=0.01,
                             label="IOU Threshold"
                         )
+                    
+                    own_output_ext = gr.Dropdown(
+                        label="Output Extension",
+                        choices=[".jpg", ".png", ".bmp", ".webp", ".mp4", ".mkv", ".webm"],
+                        value=".jpg",
+                        interactive=True,
+                        info="Select image format for Zip/Batch or video format for Video input"
+                    )
                     own_predict_btn = gr.Button("🚀 Predict", variant="primary", elem_id="btn")
 
                 
@@ -108,10 +118,13 @@ def create_tab(app):
         "upload_model_status": upload_model_status,
         "own_model_dropdown": own_model_dropdown,
         "own_delete_btn": own_delete_btn,
+        "confirm_delete_btn": confirm_delete_btn,
+        "cancel_delete_btn": cancel_delete_btn,
         "own_model_details": own_model_details,
         "own_input_img": own_input_img,
         "own_conf_slider": own_conf_slider,
         "own_iou_slider": own_iou_slider,
+        "own_output_ext": own_output_ext,
         "own_predict_btn": own_predict_btn,
         "own_output_gallery": own_output_gallery,
         "own_output_video": own_output_video,
@@ -144,19 +157,27 @@ def setup_events(app, components, all_components):
         # Return message to status markdown
         return message, updated_dropdown
     
+    def request_model_delete():
+        """Switch to confirmation view"""
+        return gr.update(visible=False), gr.update(visible=True), gr.update(visible=True)
+
+    def cancel_model_delete():
+        """Cancel delete and return to normal view"""
+        return gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
+
     def handle_model_delete(model_id):
         """Handle model deletion event"""
         if not model_id:
-            return "❌ Please select a model", gr.update(), ""
+            return "❌ No model selected", gr.update(), "", gr.update(visible=True), gr.update(visible=False), gr.update(visible=False)
         
         success, message = model_manager.delete_model(model_id)
         
         # Refresh dropdown
         updated_dropdown = refresh_own_model_dropdown()
         
-        return message, updated_dropdown, ""
+        return message, updated_dropdown, "", gr.update(visible=False), gr.update(visible=False), gr.update(visible=False)
     
-    def predict_own_model(model_id, input_files, conf, iou):
+    def predict_own_model(model_id, input_files, conf, iou, out_ext):
         if not model_id or not input_files:
             return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), "Please select a model and upload media"
         
@@ -209,7 +230,15 @@ def setup_events(app, components, all_components):
                              try:
                                  image = Image.open(img_path)
                                  res_img, _ = model_manager.inference_image(image, model, conf, iou)
-                                 save_path = os.path.join(output_dir, file)
+                                 
+                                 # Determine save name based on chosen extension
+                                 file_path = Path(file)
+                                 if out_ext.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
+                                      save_name = file_path.stem + out_ext
+                                 else:
+                                      save_name = file # Keep original if selected video ext for image
+                                      
+                                 save_path = os.path.join(output_dir, save_name)
                                  
                                  if isinstance(res_img, Image.Image):
                                      res_img.save(save_path)
@@ -237,7 +266,11 @@ def setup_events(app, components, all_components):
             video_path = input_files[0]
             try:
                 print(f"Processing video: {video_path}")
-                output_path, details = model_manager.inference_video(video_path, model, conf, iou)
+                
+                # Use passed out_ext if it's a video format, else default to .webm
+                video_ext = out_ext if out_ext.lower() in video_extensions or out_ext.lower() == '.webm' else '.webm'
+                
+                output_path, details = model_manager.inference_video(video_path, model, conf, iou, output_extension=video_ext)
                 if not output_path:
                     return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), details
                 return gr.update(visible=False), gr.update(visible=True, value=output_path), gr.update(visible=False), details
@@ -247,20 +280,55 @@ def setup_events(app, components, all_components):
 
         # 3. Batch Images
         gallery_results = []
-        for file_path in input_files:
-            try:
-                if not file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
-                    continue
-                image = Image.open(file_path)
-                output_img, _ = model_manager.inference_image(image=image, model=model, conf=conf, iou=iou)
-                gallery_results.append(output_img)
-            except Exception as e:
-                print(f"Error processing {file_path}: {e}")
-        
-        if not gallery_results:
-             return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": "No valid images processed"})
-             
-        return gr.update(value=gallery_results, visible=True), gr.update(visible=False), gr.update(visible=False), json.dumps({"info": f"Processed {len(gallery_results)} images"}, indent=2)
+        try:
+            temp_dir = tempfile.mkdtemp()
+            output_dir = os.path.join(temp_dir, "output")
+            os.makedirs(output_dir, exist_ok=True)
+            
+            processed_count = 0
+            
+            for file_path in input_files:
+                try:
+                    if not file_path.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.webp')):
+                        continue
+                    
+                    image = Image.open(file_path)
+                    output_img, _ = model_manager.inference_image(image=image, model=model, conf=conf, iou=iou)
+                    gallery_results.append(output_img)
+                    
+                    # Save for download
+                    # Determine save name based on chosen extension
+                    path_obj = Path(file_path)
+                    if out_ext.lower() in ['.jpg', '.jpeg', '.png', '.bmp', '.webp']:
+                         save_name = path_obj.stem + out_ext
+                    else:
+                         save_name = path_obj.name # Keep original if selected video ext for image
+                         
+                    save_path = os.path.join(output_dir, save_name)
+                    
+                    if isinstance(output_img, Image.Image):
+                        output_img.save(save_path)
+                    else:
+                        if hasattr(output_img, 'shape'):
+                            res_img_bgr = cv2.cvtColor(output_img, cv2.COLOR_RGB2BGR)
+                            cv2.imwrite(save_path, res_img_bgr)
+                    
+                    processed_count += 1
+                except Exception as e:
+                    print(f"Error processing {file_path}: {e}")
+            
+            if not gallery_results:
+                 return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": "No valid images processed"})
+            
+            # Create zip for download
+            output_zip = os.path.join(temp_dir, f"batch_predictions")
+            shutil.make_archive(output_zip, 'zip', output_dir)
+            output_zip_path = output_zip + ".zip"
+
+            return gr.update(value=gallery_results, visible=True), gr.update(visible=False), gr.update(visible=True, value=output_zip_path), json.dumps({"info": f"Processed {len(gallery_results)} images"}, indent=2)
+
+        except Exception as e:
+             return gr.update(visible=False), gr.update(visible=False), gr.update(visible=False), json.dumps({"error": str(e)})
 
     # --- Event Handlers ---
     c["tab"].select(
@@ -277,6 +345,8 @@ def setup_events(app, components, all_components):
     )
     
     def on_model_select(model_id):
+        if not model_id:
+            return "<p>Select a model to view details</p>", gr.update(visible=False)
         html = model_manager.display_model_details(model_id)
         return html, gr.update(visible=True)
 
@@ -286,15 +356,28 @@ def setup_events(app, components, all_components):
         outputs=[c["own_model_details"], c["own_delete_btn"]]
     )
     
+    # New Delete Flow
     c["own_delete_btn"].click(
+        fn=request_model_delete,
+        inputs=None,
+        outputs=[c["own_delete_btn"], c["confirm_delete_btn"], c["cancel_delete_btn"]]
+    )
+
+    c["cancel_delete_btn"].click(
+        fn=cancel_model_delete,
+        inputs=None,
+        outputs=[c["own_delete_btn"], c["confirm_delete_btn"], c["cancel_delete_btn"]]
+    )
+
+    c["confirm_delete_btn"].click(
         fn=handle_model_delete,
         inputs=[c["own_model_dropdown"]],
-        outputs=[c["upload_model_status"], c["own_model_dropdown"], c["own_model_details"]]
+        outputs=[c["upload_model_status"], c["own_model_dropdown"], c["own_model_details"], c["own_delete_btn"], c["confirm_delete_btn"], c["cancel_delete_btn"]]
     )
     
     c["own_predict_btn"].click(
         fn=predict_own_model,
-        inputs=[c["own_model_dropdown"], c["own_input_img"], c["own_conf_slider"], c["own_iou_slider"]],
+        inputs=[c["own_model_dropdown"], c["own_input_img"], c["own_conf_slider"], c["own_iou_slider"], c["own_output_ext"]],
         outputs=[
             c["own_output_gallery"], 
             c["own_output_video"],   
