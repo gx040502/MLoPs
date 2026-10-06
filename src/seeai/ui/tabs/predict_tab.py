@@ -1,7 +1,7 @@
 import gradio as gr
 import json
-from AI_PROJECT.src.ModelManager.ModelManager import ModelManager
-from AI_PROJECT.src.ModelManager.DBmanager import DBManager
+from src.seeai.core.model_manager import ModelManager
+from src.seeai.data.db_manager import DBManager
 from datetime import datetime
 from pathlib import Path
 from PIL import Image
@@ -16,8 +16,8 @@ def create_tab(app):
         
         with gr.Column():
             # 1. Project Selection
-            registry = DBManager('database.db')
-            model_manager = ModelManager('database.db')
+            registry = DBManager('data/database.db')
+            model_manager = ModelManager('data/database.db')
             projects = model_manager.get_trained_projects()
             
             # Format project choices: "Project 126 (3 models)"
@@ -174,7 +174,7 @@ def create_tab(app):
 
 def setup_events(app, components, all_components):
     c = components
-    model_manager = ModelManager('database.db')
+    model_manager = ModelManager('data/database.db')
     
     # Internal logic
     def on_predict_tab_select():
@@ -194,8 +194,8 @@ def setup_events(app, components, all_components):
         if not project_id:
             return gr.update(choices=[], value=None), "<p>Select a project first</p>", gr.update(value=[]), gr.update(value=[])
         
-        # registry = DBManager('database.db') # Variable already initialized in create_tab but not here
-        registry = DBManager('database.db')
+        # registry = DBManager('data/database.db') # Variable already initialized in create_tab but not here
+        registry = DBManager('data/database.db')
         models = registry.list_models(cvat_project_id=project_id)
         
         model_choices = []
@@ -269,8 +269,8 @@ def setup_events(app, components, all_components):
                 file_paths.append(item)
         input_files = file_paths
             
-        registry = DBManager('database.db')
-        model_manager = ModelManager('database.db')
+        registry = DBManager('data/database.db')
+        model_manager = ModelManager('data/database.db')
         model_info = registry.get_model(model_id)
         
         if not model_info:

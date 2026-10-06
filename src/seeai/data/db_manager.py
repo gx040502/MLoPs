@@ -8,7 +8,7 @@ from ultralytics import YOLO
 from pathlib import Path
  
 class DBManager:
-    def __init__(self, db_path: str = 'database.db'):
+    def __init__(self, db_path: str = 'data/database.db'):
         """Initialize the ModelRegistry with a database path."""
         self.db_path = db_path
         self._init_db()
@@ -453,7 +453,7 @@ def test_dataset_crud():
     print("All tests passed!")
 
 if __name__ == '__main__':
-    registry = DBManager('database.db')
+    registry = DBManager('data/database.db')
  
     # model_path = Path('/home/ccy/training_job/1.Train/durian-classification/detect/v11s/weights/best.pt')
     # model = YOLO(model_path)

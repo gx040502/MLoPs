@@ -6,10 +6,10 @@ import numpy as np
 from pathlib import Path
 from ultralytics import YOLO, SAM
 
-from AI_PROJECT.src.ModelManager.DBmanager import DBManager
+from src.seeai.data.db_manager import DBManager
 from .model import GroundingDINODetector
-from AI_PROJECT.src.all_utils.file_utils import extract_and_flatten_zip, upload_dataset_by_zip
-from AI_PROJECT.config.config import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
+from src.seeai.utils.file_utils import extract_and_flatten_zip, upload_dataset_by_zip
+from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
 
 # Utility Modules
 from . import dataset_utils
@@ -32,7 +32,7 @@ class APP():
         self.selected_dataset_1st_img_path = ""
 
         # Models
-        self.sam_model = SAM("sam2.1_b.pt")
+        self.sam_model = SAM("data/weights/sam2.1_b.pt")
         self.model = vlm_model
         self.qwen_model = qwen_model
     

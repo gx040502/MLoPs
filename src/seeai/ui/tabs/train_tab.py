@@ -1,9 +1,9 @@
 import gradio as gr
-from AI_PROJECT.src.ModelManager.ModelManager import ModelManager
-from AI_PROJECT.src.ModelManager import model_trainer
+from src.seeai.core.model_manager import ModelManager
+from src.seeai.core import model_trainer
 
 def create_tab(app):
-    model_manager = ModelManager("database.db")
+    model_manager = ModelManager("data/database.db")
     with gr.Tab("🧠 Train Model", id="train_tab") as tab:
         gr.Markdown("## Train New Model")
         gr.Markdown("Train a new model from your CVAT Project")
@@ -249,7 +249,7 @@ def create_tab(app):
 
 def setup_events(app, components, all_components):
     c = components
-    model_manager = ModelManager("database.db")
+    model_manager = ModelManager("data/database.db")
     
     # Internal logic
     def on_format_change(format_val):   

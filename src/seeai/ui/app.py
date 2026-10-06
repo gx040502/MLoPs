@@ -1,6 +1,6 @@
 import gradio as gr
-from AI_PROJECT.src.all_utils.ui_logic import refresh_all_components
-from AI_PROJECT.src.SEEAI.tabs import upload_tab, vlm_tab, train_tab, predict_tab, pretrained_models_tab, about_tab, generate_format_tab
+from src.seeai.ui.ui_logic import refresh_all_components
+from src.seeai.ui.tabs import upload_tab, vlm_tab, train_tab, predict_tab, pretrained_models_tab, about_tab, generate_format_tab
 
 def load_dataset_interface(app_interface, app):
     # Custom CSS for the button
@@ -99,7 +99,7 @@ def load_dataset_interface(app_interface, app):
     )
 
 if __name__ == "__main__":
-    from AI_PROJECT.src.all_utils.app import APP
+    from src.seeai.core.annotation_engine import APP
     app = APP()
 
     with gr.Blocks(title="See.AI Agent") as app_interface:

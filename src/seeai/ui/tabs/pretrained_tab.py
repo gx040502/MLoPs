@@ -5,8 +5,8 @@ from datetime import datetime
 from pathlib import Path
 from PIL import Image
 import tempfile
-from AI_PROJECT.src.ModelManager.ModelManager import ModelManager
-from AI_PROJECT.src.ModelManager.DBmanager import DBManager
+from src.seeai.core.model_manager import ModelManager
+from src.seeai.data.db_manager import DBManager
 
 def create_tab(app):
     with gr.Tab("🤖 Pre-Trained Models") as tab:
@@ -134,7 +134,7 @@ def create_tab(app):
 
 def setup_events(app, components, all_components):
     c = components
-    model_manager = ModelManager('database.db')
+    model_manager = ModelManager('data/database.db')
 
     # Internal logic
     def refresh_own_model_dropdown():

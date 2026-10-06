@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from cvat_sdk import make_client
 from cvat_sdk.api_client import models
-from AI_PROJECT.config.config import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
+from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
 from .file_utils import extract_and_flatten_zip
 from .dataset_utils import remove_dataset_files
 

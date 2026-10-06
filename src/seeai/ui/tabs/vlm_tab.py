@@ -1,6 +1,6 @@
 import gradio as gr
-from AI_PROJECT.src.all_utils.ui_logic import load_selected_img, get_dataset_images_for_gallery
-from AI_PROJECT.src.SEEAI.tabs.upload_tab import create_upload_components, setup_upload_events
+from src.seeai.ui.ui_logic import load_selected_img, get_dataset_images_for_gallery
+from src.seeai.ui.tabs.upload_tab import create_upload_components, setup_upload_events
 from pathlib import Path
 import os
 def create_tab(app):

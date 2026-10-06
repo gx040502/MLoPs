@@ -6,13 +6,13 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from AI_PROJECT.src.all_utils import model as utils
-from AI_PROJECT.src.all_utils.app import APP
+from src.seeai.utils import model as utils
+from src.seeai.core.annotation_engine import APP
 from .page_datasets import load_dataset_interface
 
 os.environ["GRADIO_TEMP_DIR"] = ".gradio_tmp/"
 os.makedirs(".gradio_tmp/", exist_ok=True)
-#& "C:\Users\Tan Gyap Xun\CVAT FINAL\venv\Scripts\python.exe" -m AI_PROJECT.src.SEEAI
+#& "C:\Users\Tan Gyap Xun\CVAT FINAL\venv\Scripts\python.exe" -m src.seeai
 def cleanup_gradio_tmp():
     """Clean up old files in .gradio_tmp directory"""
     temp_dir = Path(".gradio_tmp")
@@ -56,7 +56,7 @@ def main():
     # Initialize QWEN model (optional - can be loaded on-demand)
     # Uncomment the following lines to enable QWEN model
     print("\n🔄 Loading QWEN model...")
-    from AI_PROJECT.src.all_utils.qwen_detector import QwenVLMDetector
+    from src.seeai.models.qwen_vlm import QwenVLMDetector
     qwen = QwenVLMDetector(
         model_id='Qwen/Qwen3-VL-2B-Instruct',
         grounding_dino_model=gdino  # Pass Grounding DINO for bounding boxes

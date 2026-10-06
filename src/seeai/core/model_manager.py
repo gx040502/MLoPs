@@ -9,7 +9,7 @@ from cvat_sdk.api_client import Configuration, ApiClient, models
 import yaml
 from .DBmanager import DBManager
 from . import model_trainer
-from AI_PROJECT.config.config import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
+from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
 from ultralytics import YOLO
 import numpy as np
 import gradio as gr
@@ -21,7 +21,7 @@ CVAT_HOST = CVAT_HOST_IP + ":" + CVAT_HOST_PORT
 
 #hi
 class ModelManager:
-    def __init__ (self, db_path: str = 'database.db'):
+    def __init__ (self, db_path: str = 'data/database.db'):
         """Initialize the ModelManager with a database path."""
         self.db_manager = DBManager(db_path)
         # self.cvat_client = make_client(
@@ -706,7 +706,7 @@ class ModelManager:
                 
             # Load model and get info
             model = YOLO(model_path)
-            registry = DBManager('database.db')
+            registry = DBManager('data/database.db')
             model_info = registry.get_pt_model_info(model)
             
 
@@ -905,7 +905,7 @@ if __name__ == "__main__":
     manager = ModelManager()
     print(len(manager.get_cvat_projects()))
 
-    model = YOLO("/home/cy/projects/SEEAI/src/ModelManager/yolo11n.pt")
+    model = YOLO("/home/cy/projects/SEEAI/src/ModelManager/data/weights/yolo11n.pt")
 
     # model_id = manager.db_manager.register_model(
     #     cvat_project_id=107,
@@ -917,7 +917,7 @@ if __name__ == "__main__":
     # download_result = manager.download_and_format_project(107, format_name="Ultralytics YOLO Detection 1.0")
     # print(download_result)
 
-    # dataset_registry = DBManager('database.db')
+    # dataset_registry = DBManager('data/database.db')
     # dataset = dataset_registry.get_dataset_by_cvat_id(107)
     # dataset_path = dataset['storage_path']
     # print(dataset_path)
