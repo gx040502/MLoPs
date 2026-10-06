@@ -99,7 +99,7 @@ pipeline/
 
 2. **data/ (Application Data)**: Centralized storage for non-code assets (ignored by Git).
    - datasets/: Extracted datasets.
-   - models/: Locally trained AI outputs (YOLO saves here automatically into 	rain/).
+   - models/: Locally trained AI outputs (YOLO saves here automatically into train/).
    - weights/: Downloaded base model weights (sam2.1_b.pt, yolo11n.pt).
    - database.db: The SQLite registry for tracking model metadata.
 

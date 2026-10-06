@@ -1,6 +1,6 @@
 import gradio as gr
 from src.seeai.ui.ui_logic import refresh_all_components
-from src.seeai.ui.tabs import upload_tab, vlm_tab, train_tab, predict_tab, pretrained_models_tab, about_tab, generate_format_tab
+from src.seeai.ui.tabs import vlm_tab, train_tab, predict_tab, pretrained_tab, about_tab, generate_format_tab
 
 def load_dataset_interface(app_interface, app):
     # Custom CSS for the button
@@ -65,7 +65,7 @@ def load_dataset_interface(app_interface, app):
         generate_format_comps = generate_format_tab.create_tab(app)
         train_comps = train_tab.create_tab(app)
         predict_comps = predict_tab.create_tab(app)
-        pretrained_comps = pretrained_models_tab.create_tab(app)
+        pretrained_comps = pretrained_tab.create_tab(app)
         about_comps = about_tab.create_tab(app)
     
     # Registry of all components for cross-tab access
@@ -77,7 +77,7 @@ def load_dataset_interface(app_interface, app):
         "generate_format_tab": generate_format_comps,
         "train_tab": train_comps,
         "predict_tab": predict_comps,
-        "pretrained_models_tab": pretrained_comps,
+        "pretrained_tab": pretrained_comps,
         "about_tab": about_comps
     }
     
@@ -87,7 +87,7 @@ def load_dataset_interface(app_interface, app):
     generate_format_tab.setup_events(app, generate_format_comps, all_components)
     train_tab.setup_events(app, train_comps, all_components)
     predict_tab.setup_events(app, predict_comps, all_components)
-    pretrained_models_tab.setup_events(app, pretrained_comps, all_components)
+    pretrained_tab.setup_events(app, pretrained_comps, all_components)
     about_tab.setup_events(app, about_comps, all_components)
     
     
