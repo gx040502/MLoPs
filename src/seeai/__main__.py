@@ -6,9 +6,9 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from src.seeai.models import grounding_dino as model as utils
+from src.seeai.models import grounding_dino as utils
 from src.seeai.core.annotation_engine import APP
-from .page_datasets import load_dataset_interface
+from src.seeai.ui.app import load_dataset_interface
 
 os.environ["GRADIO_TEMP_DIR"] = ".gradio_tmp/"
 os.makedirs(".gradio_tmp/", exist_ok=True)
