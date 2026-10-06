@@ -278,16 +278,35 @@ def inference_dataset(model, sam_model, datasets_dir, selected_dataset_name, dat
             
     coco_builder.save_json(Path(coco_builder.directories['annotations'])/'instances_Train.json')
     
-    # Write YOLO dataset.yaml
-    yaml_content = "path: .\ntrain: train_images\nval: train_images\n\nnames:\n"
+    # Write YOLO dataset.yaml (Adjusted for clean structure)
+    yaml_content = "path: .\ntrain: images/train\nval: images/train\n\nnames:\n"
     sorted_cats = sorted(category_map.items(), key=lambda x: x[1])
     for name, cid in sorted_cats:
         yaml_content += f"  {cid - 1}: {name}\n"
     with open(output_dir / "dataset.yaml", "w") as f:
         f.write(yaml_content)
 
-    # Zip the entire output directory (contains both COCO and YOLO formats)
-    zip_path = shutil.make_archive(output_dir.as_posix(), 'zip', output_dir.as_posix())
+    # Create a staging directory to separate COCO and YOLO for the download ZIP
+    staging_dir = output_dir.parent / f"{selected_dataset_name}_export"
+    if staging_dir.exists():
+        shutil.rmtree(staging_dir)
+    staging_dir.mkdir(parents=True)
+    
+    # 1. Build COCO Folder
+    coco_export = staging_dir / f"{selected_dataset_name}_COCO"
+    coco_export.mkdir()
+    shutil.copytree(output_dir / "annotations", coco_export / "annotations")
+    shutil.copytree(output_dir / "images", coco_export / "images")
+    
+    # 2. Build YOLO Folder
+    yolo_export = staging_dir / f"{selected_dataset_name}_YOLO"
+    yolo_export.mkdir()
+    shutil.copytree(output_dir / "images" / "Train", yolo_export / "images" / "train")
+    shutil.copytree(output_dir / "yolo_labels", yolo_export / "labels" / "train")
+    shutil.copy(output_dir / "dataset.yaml", yolo_export / "dataset.yaml")
+
+    # Zip the staging directory
+    zip_path = shutil.make_archive(staging_dir.as_posix(), 'zip', staging_dir.as_posix())
     annotated_images_dir = Path(coco_builder.directories['annotated_images'])
     
     return (
