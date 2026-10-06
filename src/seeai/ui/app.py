@@ -100,97 +100,95 @@ if __name__ == "__main__":
     from src.seeai.core.annotation_engine import APP
     app = APP()
 
-    with gr.Blocks(title="See.AI Agent") as app_interface:
+def build_ui(app_interface, app):
+    with gr.Group(visible=True) as login_page:
+        gr.Markdown("<h1 style='text-align: center; margin-top: 50px;'>Welcome to SEE AI</h1>")
+        gr.Markdown("<h3 style='text-align: center;'>Before we begin, do you have a CVAT account?</h3>")
         
-        with gr.Group(visible=True) as login_page:
-            gr.Markdown("<h1 style='text-align: center; margin-top: 50px;'>Welcome to SEE AI</h1>")
-            gr.Markdown("<h3 style='text-align: center;'>Before we begin, do you have a CVAT account?</h3>")
-            
-            with gr.Row(equal_height=True):
-                with gr.Column(scale=1):
-                    pass
-                with gr.Column(scale=2):
-                    has_cvat = gr.Radio(["Yes", "No"], label="", value=None)
-                    
-                    with gr.Group(visible=False) as cvat_creds_group:
-                        gr.Markdown("### 🔑 Enter CVAT Credentials")
-                        cvat_user = gr.Textbox(label="CVAT Username")
-                        cvat_pass = gr.Textbox(label="CVAT Password", type="password")
-                        
-                        gr.Markdown("### ☁️ Google Drive Integration (Optional)")
-                        gr.Markdown("Save training outputs directly to Google Drive via Google API.")
-                        gdrive_btn = gr.Button("Authenticate Google Drive")
-                        gdrive_status = gr.Markdown("*Not connected*")
-                        
-                    enter_btn = gr.Button("Enter System", variant="primary", size="lg")
-                with gr.Column(scale=1):
-                    pass
-                    
-        with gr.Group(visible=False) as main_app:
-            all_comps = load_dataset_interface(app_interface, app)
-            
-        def toggle_creds(val):
-            return gr.update(visible=(val == "Yes"))
-            
-        def handle_gdrive_auth():
-            success, msg = authenticate_gdrive()
-            if success:
-                # Tell the .env to use a special flag or we just know it's auth'd.
-                # Actually, our model_trainer.py looks for GDRIVE_OUTPUT_DIR path.
-                # If they use OAuth, the files aren't saved to a local path, they are uploaded via API!
-                # Wait, earlier we set GDRIVE_OUTPUT_DIR="G:\My Drive...".
-                # If they authenticate via API, they want cloud upload, not local save.
-                return f"✅ {msg}"
-            return f"❌ {msg}"
-            
-        def handle_login(has_cvat_val, user, pwd):
-            if has_cvat_val == "No" or not has_cvat_val:
-                # Hide training and predict tabs, show only auto annotation
-                return [
-                    gr.update(visible=False), # login
-                    gr.update(visible=True),  # main
-                    gr.update(visible=True),  # vlm tab
-                    gr.update(visible=False), # train tab
-                    gr.update(visible=False), # predict tab
-                    gr.update(visible=False), # pretrained tab
-                    gr.update(visible=False)  # about tab
-                ]
-            else:
-                # Save to .env
-                env_path = "src/seeai/config/.env"
-                if os.path.exists(env_path):
-                    dotenv.set_key(env_path, "CVAT_USER", user)
-                    dotenv.set_key(env_path, "CVAT_PASSWORD", pwd)
-                    # Force reload inside os.environ for current session
-                    os.environ["CVAT_USER"] = user
-                    os.environ["CVAT_PASSWORD"] = pwd
-                    
-                return [
-                    gr.update(visible=False), # login
-                    gr.update(visible=True),  # main
-                    gr.update(visible=True),  # vlm tab
-                    gr.update(visible=True),  # train tab
-                    gr.update(visible=True),  # predict tab
-                    gr.update(visible=True),  # pretrained tab
-                    gr.update(visible=True)   # about tab
-                ]
+        with gr.Row(equal_height=True):
+            with gr.Column(scale=1):
+                pass
+            with gr.Column(scale=2):
+                has_cvat = gr.Radio(["Yes", "No"], label="", value=None)
                 
-        has_cvat.change(fn=toggle_creds, inputs=[has_cvat], outputs=[cvat_creds_group])
-        gdrive_btn.click(fn=handle_gdrive_auth, outputs=[gdrive_status])
+                with gr.Group(visible=False) as cvat_creds_group:
+                    gr.Markdown("### 🔑 Enter CVAT Credentials")
+                    cvat_user = gr.Textbox(label="CVAT Username")
+                    cvat_pass = gr.Textbox(label="CVAT Password", type="password")
+                    
+                    gr.Markdown("### ☁️ Google Drive Integration (Optional)")
+                    gr.Markdown("Save training outputs directly to Google Drive via Google API.")
+                    gdrive_btn = gr.Button("Authenticate Google Drive")
+                    gdrive_status = gr.Markdown("*Not connected*")
+                    
+                enter_btn = gr.Button("Enter System", variant="primary", size="lg")
+            with gr.Column(scale=1):
+                pass
+                
+    with gr.Group(visible=False) as main_app:
+        all_comps = load_dataset_interface(app_interface, app)
         
-        enter_btn.click(
-            fn=handle_login,
-            inputs=[has_cvat, cvat_user, cvat_pass],
-            outputs=[
-                login_page, 
-                main_app,
-                all_comps["vlm_tab"]["tab"],
-                all_comps["train_tab"]["tab"],
-                all_comps["predict_tab"]["tab"],
-                all_comps["pretrained_tab"]["tab"],
-                all_comps["about_tab"]["tab"]
+    def toggle_creds(val):
+        return gr.update(visible=(val == "Yes"))
+        
+    def handle_gdrive_auth():
+        success, msg = authenticate_gdrive()
+        if success:
+            return f"✅ {msg}"
+        return f"❌ {msg}"
+        
+    def handle_login(has_cvat_val, user, pwd):
+        if has_cvat_val == "No" or not has_cvat_val:
+            return [
+                gr.update(visible=False), # login
+                gr.update(visible=True),  # main
+                gr.update(visible=True),  # vlm tab
+                gr.update(visible=False), # train tab
+                gr.update(visible=False), # predict tab
+                gr.update(visible=False), # pretrained tab
+                gr.update(visible=False)  # about tab
             ]
-        )
+        else:
+            env_path = "src/seeai/config/.env"
+            if os.path.exists(env_path):
+                dotenv.set_key(env_path, "CVAT_USER", user)
+                dotenv.set_key(env_path, "CVAT_PASSWORD", pwd)
+                os.environ["CVAT_USER"] = user
+                os.environ["CVAT_PASSWORD"] = pwd
+                
+            return [
+                gr.update(visible=False), # login
+                gr.update(visible=True),  # main
+                gr.update(visible=True),  # vlm tab
+                gr.update(visible=True),  # train tab
+                gr.update(visible=True),  # predict tab
+                gr.update(visible=True),  # pretrained tab
+                gr.update(visible=True)   # about tab
+            ]
+            
+    has_cvat.change(fn=toggle_creds, inputs=[has_cvat], outputs=[cvat_creds_group])
+    gdrive_btn.click(fn=handle_gdrive_auth, outputs=[gdrive_status])
+    
+    enter_btn.click(
+        fn=handle_login,
+        inputs=[has_cvat, cvat_user, cvat_pass],
+        outputs=[
+            login_page, 
+            main_app,
+            all_comps["vlm_tab"]["tab"],
+            all_comps["train_tab"]["tab"],
+            all_comps["predict_tab"]["tab"],
+            all_comps["pretrained_tab"]["tab"],
+            all_comps["about_tab"]["tab"]
+        ]
+    )
+
+if __name__ == "__main__":
+    from src.seeai.core.annotation_engine import APP
+    app = APP()
+
+    with gr.Blocks(title="See.AI Agent") as app_interface:
+        build_ui(app_interface, app)
 
     app_interface.launch(
         debug=True,
