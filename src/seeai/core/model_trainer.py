@@ -127,6 +127,17 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         results = model.train(**train_args)
 
         print(f"Training completed. Results saved to {output_dir}")
+        
+        # Check if Google Drive API is authenticated via token.json
+        if os.path.exists("token.json"):
+            try:
+                print("Uploading outputs to Google Drive via API...")
+                from src.seeai.utils.gdrive_upload import upload_folder_to_gdrive
+                upload_folder_to_gdrive(str(output_dir), f"{project_name}_trained_model")
+                print("Successfully uploaded to Google Drive API!")
+            except Exception as e:
+                print(f"Failed to upload to Google Drive: {e}")
+                
         return True, f"Training completed successfully! Saved to {output_dir}"
         
     except Exception as e:
