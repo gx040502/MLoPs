@@ -18,18 +18,13 @@ def _patch_cvat_task_read_model():
         from cvat_sdk.api_client.model.task_read import TaskRead
         from cvat_sdk.api_client.model_utils import none_type
         
-        _original_openapi_types = TaskRead.openapi_types
-        
-        @classmethod
-        def _patched_openapi_types(cls):
-            types_dict = _original_openapi_types()
-            if 'data' in types_dict:
-                current_types = types_dict['data']
-                if none_type not in current_types:
-                    types_dict['data'] = current_types + (none_type,)
-            return types_dict
-            
-        TaskRead.openapi_types = _patched_openapi_types
+        # TaskRead.openapi_types is a cached_property that returns a dict.
+        # We can just access it and mutate the tuple for the 'data' field directly.
+        types_dict = TaskRead.openapi_types
+        if 'data' in types_dict:
+            current_types = types_dict['data']
+            if none_type not in current_types:
+                types_dict['data'] = current_types + (none_type,)
     except Exception as _e:
         print(f"⚠️  CVAT TaskRead patch skipped: {_e}")
 
