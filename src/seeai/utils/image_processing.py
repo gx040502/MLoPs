@@ -278,14 +278,6 @@ def inference_dataset(model, sam_model, datasets_dir, selected_dataset_name, dat
             
     coco_builder.save_json(Path(coco_builder.directories['annotations'])/'instances_Train.json')
     
-    # Write YOLO data.yaml (Adjusted for clean structure)
-    yaml_content = "path: .\ntrain: train/images\nval: train/images\n\nnames:\n"
-    sorted_cats = sorted(category_map.items(), key=lambda x: x[1])
-    for name, cid in sorted_cats:
-        yaml_content += f"  {cid - 1}: {name}\n"
-    with open(output_dir / "data.yaml", "w") as f:
-        f.write(yaml_content)
-
     # Create a staging directory to separate COCO and YOLO for the download ZIP
     staging_dir = output_dir.parent / f"{selected_dataset_name}_export"
     if staging_dir.exists():
@@ -297,13 +289,57 @@ def inference_dataset(model, sam_model, datasets_dir, selected_dataset_name, dat
     coco_export.mkdir()
     shutil.copytree(output_dir / "annotations", coco_export / "annotations")
     shutil.copytree(output_dir / "images", coco_export / "images")
-    
-    # 2. Build YOLO Folder
+
+    # 2. Build YOLO Folder (with Train/Valid/Test split)
     yolo_export = staging_dir / f"{selected_dataset_name}_YOLO"
     yolo_export.mkdir()
-    shutil.copytree(output_dir / "images" / "Train", yolo_export / "train" / "images")
-    shutil.copytree(output_dir / "yolo_labels", yolo_export / "train" / "labels")
-    shutil.copy(output_dir / "data.yaml", yolo_export / "data.yaml")
+    
+    import random
+    all_images = list((output_dir / "images" / "Train").iterdir())
+    random.seed(42)
+    random.shuffle(all_images)
+    
+    n_total = len(all_images)
+    n_train = int(n_total * 0.7)
+    n_val = int(n_total * 0.2)
+    
+    if n_total < 3:
+        n_train = n_total
+        n_val = 0
+    
+    splits = {
+        "train": all_images[:n_train],
+        "valid": all_images[n_train:n_train + n_val],
+        "test": all_images[n_train + n_val:]
+    }
+    
+    # Write YOLO data.yaml
+    yaml_content = "path: .\ntrain: train/images\n"
+    if splits["valid"]:
+        yaml_content += "val: valid/images\n"
+    else:
+        yaml_content += "val: train/images\n"
+    if splits["test"]:
+        yaml_content += "test: test/images\n"
+        
+    yaml_content += "\nnames:\n"
+    sorted_cats = sorted(category_map.items(), key=lambda x: x[1])
+    for name, cid in sorted_cats:
+        yaml_content += f"  {cid - 1}: {name}\n"
+    with open(yolo_export / "data.yaml", "w") as f:
+        f.write(yaml_content)
+
+    for split_name, imgs in splits.items():
+        if not imgs: continue
+        (yolo_export / split_name / "images").mkdir(parents=True, exist_ok=True)
+        (yolo_export / split_name / "labels").mkdir(parents=True, exist_ok=True)
+        for img_p in imgs:
+            shutil.copy(img_p, yolo_export / split_name / "images" / img_p.name)
+            lbl_p = output_dir / "yolo_labels" / f"{img_p.stem}.txt"
+            if lbl_p.exists():
+                shutil.copy(lbl_p, yolo_export / split_name / "labels" / lbl_p.name)
+
+
 
     # Zip the staging directory
     zip_path = shutil.make_archive(staging_dir.as_posix(), 'zip', staging_dir.as_posix())
