@@ -3,7 +3,7 @@ import numpy as np
 import shutil
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
-from .yolo_utils import YOLODatasetBuilder
+from src.seeai.data.yolo_builder import YOLODatasetBuilder
 
 
 def draw_bounding_boxes_qwen(image, detections):

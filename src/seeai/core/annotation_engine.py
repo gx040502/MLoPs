@@ -7,17 +7,17 @@ from pathlib import Path
 from ultralytics import YOLO, SAM
 
 from src.seeai.data.db_manager import DBManager
-from .model import GroundingDINODetector
+from src.seeai.models.grounding_dino import GroundingDINODetector
 from src.seeai.utils.file_utils import extract_and_flatten_zip, upload_dataset_by_zip
 from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
 
 # Utility Modules
-from . import dataset_utils
-from . import video_utils
-from . import training_utils
-from . import image_processing
-from . import cvat_utils
-from . import qwen_processing
+from src.seeai.data import dataset_manager as dataset_utils
+from src.seeai.utils import video_processing as video_utils
+from src.seeai.utils import training_utils
+from src.seeai.utils import image_processing
+from src.seeai.integrations import cvat_client as cvat_utils
+from src.seeai.utils import qwen_processing
 
 CVAT_HOST = str(CVAT_HOST_IP) + ":" + str(CVAT_HOST_PORT)
 

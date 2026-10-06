@@ -5,8 +5,8 @@ from pathlib import Path
 from cvat_sdk import make_client
 from cvat_sdk.api_client import models
 from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
-from .file_utils import extract_and_flatten_zip
-from .dataset_utils import remove_dataset_files
+from src.seeai.utils.file_utils import extract_and_flatten_zip
+from src.seeai.data.dataset_manager import remove_dataset_files
 
 CVAT_HOST = f"{CVAT_HOST_IP}:{CVAT_HOST_PORT}"
 

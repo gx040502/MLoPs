@@ -6,7 +6,7 @@ import random
 import re
 from PIL import Image, ImageDraw, ImageFont
 from pathlib import Path
-from .json_utils import COCODatasetBuilder
+from src.seeai.data.coco_builder import COCODatasetBuilder
 
 def draw_bounding_boxes(image, detections, threshold=0.3):
     """

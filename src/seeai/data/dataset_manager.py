@@ -4,7 +4,7 @@ import time
 import random
 import yaml
 from pathlib import Path
-from .file_utils import extract_and_flatten_zip
+from src.seeai.utils.file_utils import extract_and_flatten_zip
 
 def remove_dataset_files(dataset_path):
     """
