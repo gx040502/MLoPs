@@ -199,16 +199,15 @@ def build_ui(app_interface, app):
         
     def handle_login(has_cvat_val, user, pwd):
         if has_cvat_val == "No" or not has_cvat_val:
-            # User has no CVAT, so we MUST hide all CVAT-dependent tabs.
-            # In Gradio, we update the visibility of the specific Tabs.
+            # User has no CVAT, lock the tabs
             return [
-                gr.update(visible=False), # Hide login page
-                gr.update(visible=True),  # Show main app container
-                gr.update(visible=True),  # Auto Annotation (VLM)
-                gr.update(visible=False), # Train
-                gr.update(visible=False), # Predict
-                gr.update(visible=False), # Pretrained
-                gr.update(visible=False)  # About
+                gr.update(visible=False), 
+                gr.update(visible=True),  
+                gr.update(visible=True),  
+                gr.update(interactive=False, label="🔒 Train (CVAT Required)"), 
+                gr.update(interactive=False, label="🔒 Predict (CVAT Required)"), 
+                gr.update(interactive=False, label="🔒 Pretrained (CVAT Required)"), 
+                gr.update(interactive=False, label="🔒 About (CVAT Required)")  
             ]
         else:
             # User HAS CVAT account, save creds to env and allow access to all tabs
@@ -220,13 +219,13 @@ def build_ui(app_interface, app):
                 os.environ["CVAT_PASSWORD"] = pwd
                 
             return [
-                gr.update(visible=False), # Hide login page
-                gr.update(visible=True),  # Show main app container
-                gr.update(visible=True),  # Auto Annotation (VLM)
-                gr.update(visible=True),  # Train
-                gr.update(visible=True),  # Predict
-                gr.update(visible=True),  # Pretrained
-                gr.update(visible=True)   # About
+                gr.update(visible=False), 
+                gr.update(visible=True),  
+                gr.update(visible=True),  
+                gr.update(interactive=True, label="🧠 Train Model"),  
+                gr.update(interactive=True, label="🔮 Predict"),  
+                gr.update(interactive=True, label="🌍 Pretrained Model"),  
+                gr.update(interactive=True, label="ℹ️ About")   
             ]
             
     has_cvat.change(fn=toggle_creds, inputs=[has_cvat], outputs=[cvat_creds_group])
