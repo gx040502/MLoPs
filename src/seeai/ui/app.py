@@ -49,74 +49,14 @@ def load_dataset_interface(app_interface, app):
             background-color: #667eea !important;
         }
         
-        /* Premium Login Page CSS */
-        #login_container {
-            max-width: 480px;
-            margin: 10vh auto;
-            padding: 40px;
-            background: rgba(25, 25, 30, 0.6);
-            backdrop-filter: blur(16px);
-            border-radius: 24px;
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            text-align: center;
-        }
-        
-        #login_title {
-            font-size: 2.8em;
-            font-weight: 900;
-            background: linear-gradient(to right, #4facfe 0%, #00f2fe 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 5px;
-            font-family: 'Inter', sans-serif;
-        }
-        
-        #login_subtitle {
-            font-size: 1.05em;
-            color: #aaa;
-            margin-bottom: 30px;
-            font-weight: 500;
-        }
-        
-        #login_btn {
-            background: linear-gradient(45deg, #4facfe, #00f2fe);
-            border: none;
-            color: white !important;
-            font-weight: 700;
-            border-radius: 12px;
-            padding: 12px 20px;
-            box-shadow: 0 4px 15px rgba(79, 172, 254, 0.3);
-            transition: all 0.3s ease;
-            width: 100%;
-            margin-top: 20px;
-            font-size: 1.1em;
-        }
-        #login_btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(79, 172, 254, 0.5);
-        }
-        
         #gdrive_btn_auth {
-            background: rgba(255, 255, 255, 0.05) !important;
-            border: 1px solid rgba(255, 255, 255, 0.1) !important;
-            color: #ddd !important;
-            border-radius: 12px !important;
-            margin-top: 15px;
-            font-weight: 600;
-            transition: all 0.3s ease;
+            background: transparent !important;
+            border: 1px solid #4facfe !important;
+            color: #4facfe !important;
+            font-weight: bold;
         }
         #gdrive_btn_auth:hover {
-            background: rgba(255, 255, 255, 0.1) !important;
-            border-color: #4facfe !important;
-            color: #fff !important;
-        }
-        
-        /* Remove Column gaps to not mess up main app */
-        #main_app_container {
-            padding: 0 !important;
-            margin: 0 !important;
-            border: none !important;
+            background: rgba(79, 172, 254, 0.1) !important;
         }
         </style>
     """)
@@ -132,6 +72,26 @@ def load_dataset_interface(app_interface, app):
     )
     
     with gr.Tabs() as tabs:
+        
+        # NEW: Setup & Login Tab integrated directly into the layout
+        with gr.Tab("🔑 Setup & Login", id="setup_tab"):
+            gr.Markdown("## Welcome to SEE AI")
+            gr.Markdown("Auto Annotation (VLM), Pretrained Models, and About sections are completely free to use without an account.\nHowever, to Train models and Predict on CVAT projects, you must connect your CVAT account.")
+            
+            with gr.Row():
+                with gr.Column(variant="panel"):
+                    gr.Markdown("### 🔑 Connect CVAT Account")
+                    cvat_user = gr.Textbox(label="Username", placeholder="Enter your CVAT username")
+                    cvat_pass = gr.Textbox(label="Password", type="password", placeholder="Enter your CVAT password")
+                    login_btn = gr.Button("Authenticate CVAT", variant="primary")
+                    login_status = gr.Markdown("<span style='color: #888;'>*Not logged in*</span>")
+                
+                with gr.Column(variant="panel"):
+                    gr.Markdown("### ☁️ Google Drive (Optional)")
+                    gr.Markdown("Automatically export your trained weights to the cloud.")
+                    gdrive_btn = gr.Button("🔗 Authenticate via Google", elem_id="gdrive_btn_auth")
+                    gdrive_status = gr.Markdown("<span style='color: #888;'>*Not connected*</span>")
+                    
         vlm_comps = vlm_tab.create_tab(app)
         train_comps = train_tab.create_tab(app)
         predict_comps = predict_tab.create_tab(app)
@@ -156,6 +116,43 @@ def load_dataset_interface(app_interface, app):
     pretrained_tab.setup_events(app, pretrained_comps, all_components)
     about_tab.setup_events(app, about_comps, all_components)
     
+    # --- Setup & Login Logic ---
+    def handle_cvat_login(user, pwd):
+        if not user or not pwd:
+            return [
+                "<span style='color: #FF416C;'>❌ Please enter both username and password</span>",
+                gr.update(),
+                gr.update()
+            ]
+            
+        # Save creds to env and allow access to locked tabs
+        env_path = "src/seeai/config/.env"
+        if os.path.exists(env_path):
+            dotenv.set_key(env_path, "CVAT_USER", user)
+            dotenv.set_key(env_path, "CVAT_PASSWORD", pwd)
+            os.environ["CVAT_USER"] = user
+            os.environ["CVAT_PASSWORD"] = pwd
+            
+        return [
+            "<span style='color: #38ef7d;'>✅ Successfully Authenticated! Tabs Unlocked.</span>",
+            gr.update(interactive=True, label="🧠 Train Model"),
+            gr.update(interactive=True, label="🎱 Predict Model")
+        ]
+
+    def handle_gdrive_auth():
+        success, msg = authenticate_gdrive()
+        if success:
+            return f"<span style='color: #38ef7d;'>✅ {msg}</span>"
+        return f"<span style='color: #FF416C;'>❌ {msg}</span>"
+        
+    login_btn.click(
+        fn=handle_cvat_login,
+        inputs=[cvat_user, cvat_pass],
+        outputs=[login_status, all_components["train_tab"]["tab"], all_components["predict_tab"]["tab"]]
+    )
+    
+    gdrive_btn.click(fn=handle_gdrive_auth, outputs=[gdrive_status])
+    
     # --- App Initialization ---
     app_interface.load(
         fn=lambda x: refresh_all_components(app, x),
@@ -165,93 +162,12 @@ def load_dataset_interface(app_interface, app):
 
     return all_components
 
-def build_ui(app_interface, app):
-    with gr.Column(visible=True, elem_id="login_container") as login_page:
-        gr.HTML("<div id='login_title'>SEE AI</div>")
-        gr.HTML("<div id='login_subtitle'>Before we begin, do you have a CVAT account?</div>")
-        
-        has_cvat = gr.Radio(["Yes", "No"], label="", value=None, container=False)
-        
-        with gr.Column(visible=False, variant="panel") as cvat_creds_group:
-            gr.Markdown("### 🔑 CVAT Credentials")
-            cvat_user = gr.Textbox(label="Username", placeholder="Enter your CVAT username")
-            cvat_pass = gr.Textbox(label="Password", type="password", placeholder="Enter your CVAT password")
-            
-            gr.HTML("<hr style='border-color: rgba(255,255,255,0.1); margin: 20px 0;'>")
-            gr.Markdown("### ☁️ Google Drive (Optional)")
-            gr.Markdown("<span style='color: #888; font-size: 0.9em;'>Automatically export your trained weights to the cloud.</span>")
-            gdrive_btn = gr.Button("🔗 Authenticate via Google", elem_id="gdrive_btn_auth")
-            gdrive_status = gr.Markdown("<center><span style='color: #888; font-size: 0.8em;'>Not connected</span></center>")
-            
-        enter_btn = gr.Button("Enter Workspace 🚀", elem_id="login_btn")
-            
-    with gr.Column(visible=False, elem_id="main_app_container") as main_app:
-        all_comps = load_dataset_interface(app_interface, app)
-        
-    def toggle_creds(val):
-        return gr.update(visible=(val == "Yes"))
-        
-    def handle_gdrive_auth():
-        success, msg = authenticate_gdrive()
-        if success:
-            return f"<center><span style='color: #38ef7d; font-size: 0.8em;'>✅ {msg}</span></center>"
-        return f"<center><span style='color: #FF416C; font-size: 0.8em;'>❌ {msg}</span></center>"
-        
-    def handle_login(has_cvat_val, user, pwd):
-        if has_cvat_val == "No" or not has_cvat_val:
-            # User has no CVAT, lock the tabs
-            return [
-                gr.update(visible=False), 
-                gr.update(visible=True),  
-                gr.update(visible=True),  
-                gr.update(interactive=False, label="🔒 Train (CVAT Required)"), 
-                gr.update(interactive=False, label="🔒 Predict (CVAT Required)"), 
-                gr.update(interactive=False, label="🔒 Pretrained (CVAT Required)"), 
-                gr.update(interactive=False, label="🔒 About (CVAT Required)")  
-            ]
-        else:
-            # User HAS CVAT account, save creds to env and allow access to all tabs
-            env_path = "src/seeai/config/.env"
-            if os.path.exists(env_path):
-                dotenv.set_key(env_path, "CVAT_USER", user)
-                dotenv.set_key(env_path, "CVAT_PASSWORD", pwd)
-                os.environ["CVAT_USER"] = user
-                os.environ["CVAT_PASSWORD"] = pwd
-                
-            return [
-                gr.update(visible=False), 
-                gr.update(visible=True),  
-                gr.update(visible=True),  
-                gr.update(interactive=True, label="🧠 Train Model"),  
-                gr.update(interactive=True, label="🔮 Predict"),  
-                gr.update(interactive=True, label="🌍 Pretrained Model"),  
-                gr.update(interactive=True, label="ℹ️ About")   
-            ]
-            
-    has_cvat.change(fn=toggle_creds, inputs=[has_cvat], outputs=[cvat_creds_group])
-    gdrive_btn.click(fn=handle_gdrive_auth, outputs=[gdrive_status])
-    
-    # We output to the exact tab components to control their visibility
-    enter_btn.click(
-        fn=handle_login,
-        inputs=[has_cvat, cvat_user, cvat_pass],
-        outputs=[
-            login_page, 
-            main_app,
-            all_comps["vlm_tab"]["tab"],
-            all_comps["train_tab"]["tab"],
-            all_comps["predict_tab"]["tab"],
-            all_comps["pretrained_tab"]["tab"],
-            all_comps["about_tab"]["tab"]
-        ]
-    )
-
 if __name__ == "__main__":
     from src.seeai.core.annotation_engine import APP
     app = APP()
 
     with gr.Blocks(title="See.AI Agent") as app_interface:
-        build_ui(app_interface, app)
+        load_dataset_interface(app_interface, app)
 
     app_interface.launch(
         debug=True,

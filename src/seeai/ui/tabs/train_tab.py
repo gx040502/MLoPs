@@ -4,7 +4,7 @@ from src.seeai.core import model_trainer
 
 def create_tab(app):
     model_manager = ModelManager("data/database.db")
-    with gr.Tab("🧠 Train Model", id="train_tab") as tab:
+    with gr.Tab("🔒 Train (CVAT Required)", id="train_tab", interactive=False) as tab:
         gr.Markdown("## Train New Model")
         gr.Markdown("Train a new model from your CVAT Project")
         

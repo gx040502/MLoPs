@@ -9,7 +9,7 @@ from ultralytics import YOLO
 
 
 def create_tab(app):
-    with gr.Tab("🎱 Predict Model") as tab:
+    with gr.Tab("🔒 Predict (CVAT Required)", id="predict_tab", interactive=False) as tab:
         # UI components only
         gr.Markdown("## Predict Model")
         gr.Markdown("Select a CVAT project, then choose a trained model to run inference.")
