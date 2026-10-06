@@ -17,13 +17,13 @@ from src.seeai.utils import video_processing as video_utils
 from src.seeai.utils import training_utils
 from src.seeai.utils import image_processing
 from src.seeai.integrations import cvat_client as cvat_utils
-from src.seeai.utils import qwen_processing
+
 
 CVAT_HOST = str(CVAT_HOST_IP) + ":" + str(CVAT_HOST_PORT)
 
 class APP():
 
-    def __init__(self, vlm_model: GroundingDINODetector=None, qwen_model=None):
+    def __init__(self, vlm_model: GroundingDINODetector=None):
         # In-memory dataset storage (dict format: {name: {name, path}})
         self.datasets = {}
         # Go up 3 levels from src/seeai/core/annotation_engine.py to the pipeline root, then into data/datasets/temp
@@ -34,7 +34,7 @@ class APP():
         # Models
         self.sam_model = SAM("data/weights/sam2.1_b.pt")
         self.model = vlm_model
-        self.qwen_model = qwen_model
+
     
     # -------------------------------------------------------------------------
     #                         DATASET MANAGEMENT
@@ -218,38 +218,7 @@ class APP():
             progress=progress
         )
 
-    # -------------------------------------------------------------------------
-    #                         QWEN LOGIC
-    # -------------------------------------------------------------------------
-    
-    def process_image_qwen(self, image, text_prompt):
-        """Process image with QWEN VLM for object detection."""
-        return qwen_processing.process_image_qwen(
-            qwen_model=self.qwen_model,
-            image=image,
-            text_prompt=text_prompt
-        )
-    
-    def inference_dataset_qwen(self, prompt='.'):
-        """Run QWEN inference on entire dataset."""
-        success, dataset = self.get_dataset_by_name(self.selected_dataset)
-        if not success:
-            return f"❌ Error: Dataset '{self.selected_dataset}' not found.", ""
-        
-        return qwen_processing.inference_dataset_qwen(
-            qwen_model=self.qwen_model,
-            datasets_dir=self.datasets_dir,
-            selected_dataset_name=self.selected_dataset,
-            dataset_path=dataset.get('path'),
-            prompt=prompt
-        )
-    
-    def export_yolo_format(self):
-        """Export inference results to YOLO format."""
-        return qwen_processing.export_yolo_format(
-            datasets_dir=self.datasets_dir,
-            selected_dataset_name=self.selected_dataset
-        )
+
 
     # Cleanup preview
     def cleanup_preview(self):

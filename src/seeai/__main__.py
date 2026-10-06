@@ -53,19 +53,7 @@ def main():
     model_id = "IDEA-Research/grounding-dino-base"
     gdino = utils.GroundingDINODetector(model_id)
     
-    # Initialize QWEN model (optional - can be loaded on-demand)
-    # Uncomment the following lines to enable QWEN model
-    print("\n🔄 Loading QWEN model...")
-    from src.seeai.models.qwen_vlm import QwenVLMDetector
-    qwen = QwenVLMDetector(
-        model_id='Qwen/Qwen3-VL-2B-Instruct',
-        grounding_dino_model=gdino  # Pass Grounding DINO for bounding boxes
-    )
-    qwen.load_model()
-    app = APP(gdino, qwen_model=qwen)
-    
-    # For now, initialize without QWEN (will show error if user tries to use Generate Format Folder tab)
-    # app = APP(gdino, qwen_model=None)
+    app = APP(gdino)
 
     custom_css = """
     #detection_details_code .cm-scroller {
