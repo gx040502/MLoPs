@@ -7,7 +7,7 @@ def create_tab(app):
         # ============================================================
         # Upload Section (embedded from upload_tab)
         # ============================================================
-        upload_components = create_upload_components(app)
+        
         
         # Add separator
         gr.HTML("""
@@ -140,16 +140,16 @@ def create_tab(app):
         "raw_output": raw_output
     }
     
-    # Add upload components
-    components_dict.update(upload_components)
+    
+    
     
     return components_dict
 
 def setup_events(app, components, all_components):
     c = components
     
-    # Set up upload event handlers
-    setup_upload_events(app, components, all_components)
+    
+    
     
     def refresh_cvat_ui(inference_output):
         """Show CVAT button only if inference succeeded"""

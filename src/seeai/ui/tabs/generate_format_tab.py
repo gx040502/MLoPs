@@ -9,7 +9,7 @@ def create_tab(app):
         # ============================================================
         # Upload Section (embedded from upload_tab)
         # ============================================================
-        upload_components = create_upload_components(app)
+        
         
         # Add separator
         gr.HTML("""
@@ -132,8 +132,8 @@ def create_tab(app):
         "raw_output": raw_output
     }
     
-    # Add upload components
-    components_dict.update(upload_components)
+    
+    
     
     return components_dict
 
@@ -141,8 +141,8 @@ def create_tab(app):
 def setup_events(app, components, all_components):
     c = components
     
-    # Set up upload event handlers (modified for temp storage)
-    setup_upload_events(app, components, all_components)
+     (modified for temp storage)
+    
     
     def refresh_yolo_ui(inference_output):
         """Show YOLO export button only if inference succeeded"""
