@@ -26,7 +26,7 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
     dataset_dir = base_dir / 'datasets' / project_name
     output_dir = base_dir / 'models/train' / project_name
     output_dir.mkdir(parents=True, exist_ok=True)
-    model_output_name = model_path.split("/")[-1].split(".")[0]
+    model_output_name = Path(model_path).stem  # Works on all OS
     
     # We no longer update global settings to avoid side-effects/stale configs
     # settings.update({ ... })
@@ -99,7 +99,7 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
         
         # Prepare training arguments
         train_args = {
-            'project': output_dir.as_posix(),           # Explicitly set output dir
+            'project': str(output_dir),           # Explicitly set output dir (Windows compatible)
             'data': data_path,                      # Directory for classification, yaml for others
             'device': 0,
             'batch': -1,

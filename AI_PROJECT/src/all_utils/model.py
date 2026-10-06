@@ -10,7 +10,7 @@ matplotlib.rcParams['figure.dpi'] = 300
 from PIL import Image, ImageDraw, ImageFont
 from transformers import AutoProcessor, AutoModelForZeroShotObjectDetection 
 from transformers.image_utils import load_image
-from swarm_models import BaseMultiModalModel
+#from swarm_models import BaseMultiModalModel
 
 from pathlib import Path
 from huggingface_hub import login, HfFolder

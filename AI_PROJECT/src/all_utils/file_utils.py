@@ -77,7 +77,8 @@ def upload_dataset_by_zip(zip_file_path, temp_dir):
         return False, "The uploaded file is not a valid ZIP file. Please upload a .zip archive.", None
     
     try:
-        project_name = zip_file_path.split('/')[-1].replace('.zip', '')
+        from pathlib import Path
+        project_name = Path(zip_file_path).stem  # Gets filename without extension, works on all OS
         
         output_dir = os.path.join(temp_dir, project_name)
         

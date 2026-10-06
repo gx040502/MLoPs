@@ -147,7 +147,7 @@ def process_image(model, sam_model, image, text_prompt, confidence_threshold=0.3
         if inference_format == "Segmentation" and detections and sam_model:
              try:
                  bboxes = [det['box'] for det in detections]
-                 sam_results = sam_model(image, bboxes=bboxes, verbose=False)
+                 sam_results = sam_model(image, bboxes=np.array(bboxes), verbose=False)
                  
                  if sam_results and sam_results[0].masks:
                      res_plotted = sam_results[0].plot() # numpy BGR

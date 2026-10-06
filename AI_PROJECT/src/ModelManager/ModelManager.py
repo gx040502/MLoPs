@@ -34,29 +34,33 @@ class ModelManager:
 
     def get_cvat_projects(self):
         """Fetch and return a list of CVAT projects."""
-        with self.cvat_client as client:
-            # First, get the organization ID for "PixeVision"
-            org_id = None
-            try:
-                orgs, _ = client.organizations_api.list()
-                for org in orgs.results:
-                    if org.slug == "PixeVision" or org.name == "PixeVision":
-                        org_id = org.id
-                        print(f"Found organization 'PixeVision' with ID: {org_id}")
-                        break
-                if not org_id:
-                    print("⚠️ Warning: Organization 'PixeVision' not found. Showing all projects.")
-            except Exception as e:
-                print(f"⚠️ Warning: Could not fetch organizations: {e}")
-            
-            # Fetch projects, filtered by organization if found
-            if org_id:
-                projects, _ = client.projects_api.list(org_id=org_id,page_size=100)
-            else:
-                projects, _ = client.projects_api.list()
-            
-            # Format as [(Name (ID: X), X)] for Gradio dropdown
-            return [(f"{p.name} (ID: {p.id})", p.id) for p in projects.results]
+        try:
+            with self.cvat_client as client:
+                # First, get the organization ID for "PixeVision"
+                org_id = None
+                try:
+                    orgs, _ = client.organizations_api.list()
+                    for org in orgs.results:
+                        if org.slug == "PixeVision" or org.name == "PixeVision":
+                            org_id = org.id
+                            print(f"Found organization 'PixeVision' with ID: {org_id}")
+                            break
+                    if not org_id:
+                        print("⚠️ Warning: Organization 'PixeVision' not found. Showing all projects.")
+                except Exception as e:
+                    print(f"⚠️ Warning: Could not fetch organizations: {e}")
+                
+                # Fetch projects, filtered by organization if found
+                if org_id:
+                    projects, _ = client.projects_api.list(org_id=org_id,page_size=100)
+                else:
+                    projects, _ = client.projects_api.list()
+                
+                # Format as [(Name (ID: X), X)] for Gradio dropdown
+                return [(f"{p.name} (ID: {p.id})", p.id) for p in projects.results]
+        except Exception as e:
+            print(f"⚠️ Error: Could not connect to CVAT server: {e}")
+            return [("CVAT Offline - No Projects", -1)]
       
     def download_and_format_project(self, project_id, format_name="Ultralytics YOLO Detection 1.0", custom_name=None):
         """

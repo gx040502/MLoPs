@@ -12,7 +12,7 @@ from .page_datasets import load_dataset_interface
 
 os.environ["GRADIO_TEMP_DIR"] = ".gradio_tmp/"
 os.makedirs(".gradio_tmp/", exist_ok=True)
-
+#& "C:\Users\Tan Gyap Xun\CVAT FINAL\venv\Scripts\python.exe" -m AI_PROJECT.src.SEEAI
 def cleanup_gradio_tmp():
     """Clean up old files in .gradio_tmp directory"""
     temp_dir = Path(".gradio_tmp")
@@ -49,10 +49,23 @@ def main():
     cleanup_thread.start()
     print("🧹 Started automatic cleanup of .gradio_tmp (Daily at 12 AM)")
     
-    # Initialize the app
+    # Initialize Grounding DINO model
     model_id = "IDEA-Research/grounding-dino-base"
     gdino = utils.GroundingDINODetector(model_id)
-    app = APP(gdino)
+    
+    # Initialize QWEN model (optional - can be loaded on-demand)
+    # Uncomment the following lines to enable QWEN model
+    print("\n🔄 Loading QWEN model...")
+    from AI_PROJECT.src.all_utils.qwen_detector import QwenVLMDetector
+    qwen = QwenVLMDetector(
+        model_id='Qwen/Qwen3-VL-2B-Instruct',
+        grounding_dino_model=gdino  # Pass Grounding DINO for bounding boxes
+    )
+    qwen.load_model()
+    app = APP(gdino, qwen_model=qwen)
+    
+    # For now, initialize without QWEN (will show error if user tries to use Generate Format Folder tab)
+    # app = APP(gdino, qwen_model=None)
 
     custom_css = """
     #detection_details_code .cm-scroller {
@@ -76,8 +89,8 @@ def main():
     
     app_interface.launch(
         debug=True,
-        share=True,
-        server_name="0.0.0.0",  # Allow external connections
+        share=False,
+        server_name="127.0.0.1",  # Changed to 127.0.0.1 for proper local access on Windows
         server_port=6605, #Testing Port
         allowed_paths=[gradio_dir],
         css= custom_css,
