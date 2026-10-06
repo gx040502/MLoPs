@@ -7,22 +7,33 @@ from cvat_sdk.api_client import models
 from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
 from src.seeai.utils.file_utils import extract_and_flatten_zip
 from src.seeai.data.dataset_manager import remove_dataset_files
-
 # ─────────────────────────────────────────────────────────────────────────────
-def _patch_cvat_sdk_type_check():
+# Targeted Monkey-Patch: CVAT Server 2.77.x returns null for the `data` field 
+# on freshly created tasks, but the SDK model strictly requires an int. 
+# We dynamically inject `none_type` into the allowed types for `data` so the 
+# SDK deserializer doesn't crash, while keeping all other validations intact.
+# ─────────────────────────────────────────────────────────────────────────────
+def _patch_cvat_task_read_model():
     try:
-        from cvat_sdk.api_client.api_client import ApiClient
-        _original_deserialize = ApiClient.deserialize
-
-        def _lenient_deserialize(self, response, response_schema, *, _check_type=True):
-            # Force type-checking off so None values in optional fields don't crash
-            return _original_deserialize(self, response, response_schema, _check_type=False)
-
-        ApiClient.deserialize = _lenient_deserialize
+        from cvat_sdk.api_client.model.task_read import TaskRead
+        from cvat_sdk.api_client.model_utils import none_type
+        
+        _original_openapi_types = TaskRead.openapi_types
+        
+        @classmethod
+        def _patched_openapi_types(cls):
+            types_dict = _original_openapi_types()
+            if 'data' in types_dict:
+                current_types = types_dict['data']
+                if none_type not in current_types:
+                    types_dict['data'] = current_types + (none_type,)
+            return types_dict
+            
+        TaskRead.openapi_types = _patched_openapi_types
     except Exception as _e:
-        print(f"⚠️  CVAT SDK patch skipped: {_e}")
+        print(f"⚠️  CVAT TaskRead patch skipped: {_e}")
 
-_patch_cvat_sdk_type_check()
+_patch_cvat_task_read_model()
 # ─────────────────────────────────────────────────────────────────────────────
 
 CVAT_HOST = f"{CVAT_HOST_IP}:{CVAT_HOST_PORT}"
