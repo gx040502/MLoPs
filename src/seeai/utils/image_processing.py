@@ -192,7 +192,7 @@ def inference_dataset(model, sam_model, datasets_dir, selected_dataset_name, dat
         )
     
     dataset_dir = Path(dataset_path)
-    output_dir = Path(datasets_dir)/ '.output' / f"{selected_dataset_name}_coco_yolo" 
+    output_dir = Path(datasets_dir)/ '.output' / f"{selected_dataset_name}_coco" 
     output_dir.mkdir(parents=True, exist_ok=True)
     
     yolo_labels_dir = output_dir / 'yolo_labels'
