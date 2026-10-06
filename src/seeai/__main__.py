@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 
 from src.seeai.models import grounding_dino as utils
 from src.seeai.core.annotation_engine import APP
-from src.seeai.ui.app import build_ui
+from src.seeai.ui.app import load_dataset_interface
 
 os.environ["GRADIO_TEMP_DIR"] = ".gradio_tmp/"
 os.makedirs(".gradio_tmp/", exist_ok=True)
@@ -67,7 +67,7 @@ def main():
     """
 
     with gr.Blocks(title="See.AI Agent", fill_height=True) as app_interface:
-        build_ui(app_interface, app)
+        load_dataset_interface(app_interface, app)
 
 
     # Get absolute path to .gradio folder to satisfy allowed_paths requirements
