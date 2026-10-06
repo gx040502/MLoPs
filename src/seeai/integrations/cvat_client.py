@@ -4,7 +4,7 @@ import shutil
 from pathlib import Path
 from cvat_sdk import make_client
 from cvat_sdk.api_client import models
-from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
+from src.seeai.config.settings import CVAT_URL, CVAT_USER, CVAT_PASSWORD
 from src.seeai.utils.file_utils import extract_and_flatten_zip
 from src.seeai.data.dataset_manager import remove_dataset_files
 # ─────────────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ def _patch_cvat_task_read_model():
 _patch_cvat_task_read_model()
 # ─────────────────────────────────────────────────────────────────────────────
 
-CVAT_HOST = f"{CVAT_HOST_IP}:{CVAT_HOST_PORT}"
+CVAT_HOST = CVAT_URL
 
 def create_cvat_project_with_tasks(datasets_dir, selected_dataset_name):
     """

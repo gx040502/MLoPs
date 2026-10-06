@@ -81,6 +81,7 @@ def load_dataset_interface(app_interface, app):
             with gr.Row():
                 with gr.Column(variant="panel"):
                     gr.Markdown("### 🔑 Connect CVAT Account")
+                    cvat_url = gr.Textbox(label="CVAT Server URL", placeholder="e.g. http://localhost:8080 or https://app.cvat.ai", value="http://localhost:8080")
                     cvat_user = gr.Textbox(label="Username", placeholder="Enter your CVAT username")
                     cvat_pass = gr.Textbox(label="Password", type="password", placeholder="Enter your CVAT password")
                     login_btn = gr.Button("Authenticate CVAT", variant="primary")
@@ -117,20 +118,18 @@ def load_dataset_interface(app_interface, app):
     about_tab.setup_events(app, about_comps, all_components)
     
     # --- Setup & Login Logic ---
-    def handle_cvat_login(user, pwd):
-        if not user or not pwd:
+    def handle_cvat_login(url, user, pwd):
+        if not user or not pwd or not url:
             return [
-                "<span style='color: #FF416C;'>❌ Please enter both username and password</span>",
+                "<span style='color: #FF416C;'>❌ Please enter URL, username, and password</span>",
                 gr.update(),
                 gr.update()
             ]
             
         try:
             from cvat_sdk import make_client
-            from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT
             
             # Sanitize URL just in case
-            url = f"{CVAT_HOST_IP}:{CVAT_HOST_PORT}"
             if not url.startswith(('http://', 'https://')):
                 url = 'http://' + url
                 
@@ -139,7 +138,7 @@ def load_dataset_interface(app_interface, app):
                 pass # If it doesn't throw, credentials are valid!
         except Exception as e:
             return [
-                "<span style='color: #FF416C;'>❌ Authentication Failed: Invalid credentials or server offline</span>",
+                f"<span style='color: #FF416C;'>❌ Authentication Failed: Invalid credentials or server offline</span>",
                 gr.update(),
                 gr.update()
             ]
@@ -147,8 +146,10 @@ def load_dataset_interface(app_interface, app):
         # Save creds to env and allow access to locked tabs
         env_path = "src/seeai/config/.env"
         if os.path.exists(env_path):
+            dotenv.set_key(env_path, "CVAT_URL", url)
             dotenv.set_key(env_path, "CVAT_USER", user)
             dotenv.set_key(env_path, "CVAT_PASSWORD", pwd)
+            os.environ["CVAT_URL"] = url
             os.environ["CVAT_USER"] = user
             os.environ["CVAT_PASSWORD"] = pwd
             
@@ -166,7 +167,7 @@ def load_dataset_interface(app_interface, app):
         
     login_btn.click(
         fn=handle_cvat_login,
-        inputs=[cvat_user, cvat_pass],
+        inputs=[cvat_url, cvat_user, cvat_pass],
         outputs=[login_status, all_components["train_tab"]["tab"], all_components["predict_tab"]["tab"]]
     )
     

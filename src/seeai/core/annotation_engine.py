@@ -9,7 +9,7 @@ from ultralytics import YOLO, SAM
 from src.seeai.data.db_manager import DBManager
 from src.seeai.models.grounding_dino import GroundingDINODetector
 from src.seeai.utils.file_utils import extract_and_flatten_zip, upload_dataset_by_zip
-from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
+from src.seeai.config.settings import CVAT_URL, CVAT_USER, CVAT_PASSWORD
 
 # Utility Modules
 from src.seeai.data import dataset_manager as dataset_utils
@@ -19,7 +19,7 @@ from src.seeai.utils import image_processing
 from src.seeai.integrations import cvat_client as cvat_utils
 
 
-CVAT_HOST = str(CVAT_HOST_IP) + ":" + str(CVAT_HOST_PORT)
+CVAT_HOST = CVAT_URL
 
 class APP():
 

@@ -7,10 +7,10 @@ import numpy as np
 from pathlib import Path
 from PIL import Image
 from cvat_sdk import make_client
-from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
+from src.seeai.config.settings import CVAT_URL, CVAT_USER, CVAT_PASSWORD
 
 # Construct CVAT Host URL
-CVAT_HOST = f"{CVAT_HOST_IP}:{CVAT_HOST_PORT}"
+CVAT_HOST = CVAT_URL
 
 def get_format_pretrained_models(format_name=None):
     """

@@ -9,7 +9,7 @@ from cvat_sdk.api_client import Configuration, ApiClient, models
 import yaml
 from src.seeai.data.db_manager import DBManager
 from src.seeai.core import model_trainer
-from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT, CVAT_USER, CVAT_PASSWORD
+from src.seeai.config.settings import CVAT_URL, CVAT_USER, CVAT_PASSWORD
 from ultralytics import YOLO
 import numpy as np
 import gradio as gr
@@ -17,7 +17,7 @@ import os
 import cv2
 import tempfile
 
-CVAT_HOST = CVAT_HOST_IP + ":" + CVAT_HOST_PORT
+CVAT_HOST = CVAT_URL
 
 #hi
 class ModelManager:
