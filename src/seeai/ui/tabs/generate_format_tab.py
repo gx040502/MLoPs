@@ -141,7 +141,6 @@ def create_tab(app):
 def setup_events(app, components, all_components):
     c = components
     
-     (modified for temp storage)
     
     
     def refresh_yolo_ui(inference_output):
