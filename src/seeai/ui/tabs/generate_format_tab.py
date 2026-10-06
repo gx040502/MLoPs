@@ -166,7 +166,12 @@ def setup_events(app, components, all_components):
             ]
 
     def on_gallery_select(evt: gr.SelectData): 
-        return evt.value["image"]["path"]
+        val = evt.value
+        if isinstance(val, dict):
+            return val.get("image", {}).get("path", val.get("name", val))
+        elif isinstance(val, (list, tuple)):
+            return val[0]
+        return val
 
     def load_annotated_images(annotated_dir):
         """Load all images from the annotated images directory for gallery display"""
