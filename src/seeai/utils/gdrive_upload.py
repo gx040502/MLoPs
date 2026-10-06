@@ -27,15 +27,41 @@ def upload_file_to_gdrive(local_path, filename, folder_id=None):
     file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
     return file.get('id')
 
+def get_or_create_folder(service, folder_name, parent_id=None):
+    """Finds a folder by name, or creates it if it doesn't exist."""
+    query = f"name='{folder_name}' and mimeType='application/vnd.google-apps.folder' and trashed=false"
+    if parent_id:
+        query += f" and '{parent_id}' in parents"
+        
+    results = service.files().list(q=query, spaces='drive', fields='files(id, name)').execute()
+    items = results.get('files', [])
+    
+    if items:
+        return items[0]['id']
+        
+    folder_metadata = {
+        'name': folder_name,
+        'mimeType': 'application/vnd.google-apps.folder'
+    }
+    if parent_id:
+        folder_metadata['parents'] = [parent_id]
+        
+    folder = service.files().create(body=folder_metadata, fields='id').execute()
+    return folder.get('id')
+
 def upload_folder_to_gdrive(local_folder_path, gdrive_folder_name):
     """Uploads an entire directory of trained model outputs to Google Drive."""
     service = get_drive_service()
     if not service: return None
     
-    # 1. Create a parent folder in Drive
+    # 1. Get or create the master parent folder
+    master_parent_id = get_or_create_folder(service, "CVAT trained model results")
+    
+    # 2. Create the specific project folder inside it
     folder_metadata = {
         'name': gdrive_folder_name,
-        'mimeType': 'application/vnd.google-apps.folder'
+        'mimeType': 'application/vnd.google-apps.folder',
+        'parents': [master_parent_id]
     }
     parent_folder = service.files().create(body=folder_metadata, fields='id').execute()
     parent_id = parent_folder.get('id')
