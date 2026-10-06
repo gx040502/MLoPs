@@ -26,8 +26,8 @@ class APP():
     def __init__(self, vlm_model: GroundingDINODetector=None, qwen_model=None):
         # In-memory dataset storage (dict format: {name: {name, path}})
         self.datasets = {}
-        # Moved to src/all_utils, so go up 2 levels to root, then to data/datasets/temp
-        self.datasets_dir = str(Path(__file__).resolve().parents[2] / "data/datasets/temp")
+        # Go up 3 levels from src/seeai/core/annotation_engine.py to the pipeline root, then into data/datasets/temp
+        self.datasets_dir = str(Path(__file__).resolve().parents[3] / "data/datasets/temp")
         self.selected_dataset = ''
         self.selected_dataset_1st_img_path = ""
 
