@@ -85,7 +85,7 @@ class ModelManager:
                 
                 
                 # Base directory for ModelManager datasets (../../data)
-                base_dir = Path(__file__).resolve().parents[2].joinpath('data')
+                base_dir = Path(__file__).resolve().parents[3].joinpath('data')
                 
                 # Zip file goes to project root 'dataset' folder as requested
                 zip_path = base_dir / 'datasets' / f"{project_name}.zip"
@@ -254,7 +254,7 @@ class ModelManager:
             # Import train module (assumed to be in path or project root)
             import sys
             # Attempt to add project root to path if not present (../../)
-            project_root = str(Path(__file__).resolve().parents[2])
+            project_root = str(Path(__file__).resolve().parents[3])
             if project_root not in sys.path:
                 sys.path.append(project_root)
             
@@ -268,7 +268,7 @@ class ModelManager:
                  sub_dir = "classification"
 
             # Assuming standard model naming convention in models/pre_trained/
-            base_dir = Path(__file__).resolve().parents[2].joinpath('data')
+            base_dir = Path(__file__).resolve().parents[3].joinpath('data')
             model_file = base_dir / "models/pre_trained" / sub_dir / model_name
             
             print(f"Starting training with model: {model_file}")
@@ -304,7 +304,7 @@ class ModelManager:
                         # We use the logic from app.py to find the latest run directory in models/train/{project_name}
                         # because model_trainer.run_training returns a message string, not a clean path.
                         
-                        base_dir = Path(__file__).resolve().parents[2].joinpath('data')
+                        base_dir = Path(__file__).resolve().parents[3].joinpath('data')
                         project_train_dir = base_dir / "models/train" / project_name
                         best_model_path = None
                         
@@ -472,7 +472,7 @@ class ModelManager:
         """
         try:
             # 1. Prepare directory
-            base_dir = Path(__file__).resolve().parents[2].joinpath('data')
+            base_dir = Path(__file__).resolve().parents[3].joinpath('data')
             upload_dir = base_dir / "models/uploaded"
             upload_dir.mkdir(parents=True, exist_ok=True)
             

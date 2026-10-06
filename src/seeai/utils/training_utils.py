@@ -26,8 +26,8 @@ def get_format_pretrained_models(format_name=None):
             sub_dir = "classification"
     
     # Models dir relative to AI_PROJECT root
-    # parents[0] = all_utils, parents[1] = src, parents[2] = AI_PROJECT
-    models_dir = Path(__file__).resolve().parents[2] / "data/models/pre_trained" / sub_dir
+    # parents[0] = all_utils, parents[1] = src/seeai, parents[2] = src, parents[3] = AI_PROJECT
+    models_dir = Path(__file__).resolve().parents[3] / "data/models/pre_trained" / sub_dir
     if not models_dir.exists():
         return []
     

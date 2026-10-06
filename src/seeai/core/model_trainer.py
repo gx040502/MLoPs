@@ -22,7 +22,7 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
     print(f"Starting training for project: {project_name}")
     print(f"Model: {model_path}, Epochs: {epochs}, Imgsz: {imgsz}, Manual Aug: {manual_aug}, Format: {format_name}")
 
-    base_dir = Path(__file__).resolve().parents[2].joinpath('data')
+    base_dir = Path(__file__).resolve().parents[3].joinpath('data')
     dataset_dir = base_dir / 'datasets' / project_name
     output_dir = base_dir / 'models/train' / project_name
     output_dir.mkdir(parents=True, exist_ok=True)
