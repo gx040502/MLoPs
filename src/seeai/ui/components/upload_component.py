@@ -327,9 +327,4 @@ def setup_events(app, components, all_components):
         outputs=[c["upload_cvat_progress"], c["upload_cvat_status"]]
     )
 
-def setup_events(app, components, all_components):
-    """
-    Wrapper function for backward compatibility.
-    Calls setup_events.
-    """
-    setup_events(app, components, all_components)
+
