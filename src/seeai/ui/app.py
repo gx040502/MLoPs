@@ -125,6 +125,25 @@ def load_dataset_interface(app_interface, app):
                 gr.update()
             ]
             
+        try:
+            from cvat_sdk import make_client
+            from src.seeai.config.settings import CVAT_HOST_IP, CVAT_HOST_PORT
+            
+            # Sanitize URL just in case
+            url = f"{CVAT_HOST_IP}:{CVAT_HOST_PORT}"
+            if not url.startswith(('http://', 'https://')):
+                url = 'http://' + url
+                
+            # Validating credentials by attempting to connect
+            with make_client(url, credentials=(user, pwd)) as client:
+                pass # If it doesn't throw, credentials are valid!
+        except Exception as e:
+            return [
+                "<span style='color: #FF416C;'>❌ Authentication Failed: Invalid credentials or server offline</span>",
+                gr.update(),
+                gr.update()
+            ]
+            
         # Save creds to env and allow access to locked tabs
         env_path = "src/seeai/config/.env"
         if os.path.exists(env_path):
