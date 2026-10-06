@@ -20,142 +20,142 @@ def create_tab(app):
             gr.Markdown("Select a CVAT project, then choose a trained model to run inference.")
             
             with gr.Column():
-            # 1. Project Selection
-            registry = DBManager('data/database.db')
-            model_manager = ModelManager('data/database.db')
-            projects = model_manager.get_trained_projects()
+                # 1. Project Selection
+                registry = DBManager('data/database.db')
+                model_manager = ModelManager('data/database.db')
+                projects = model_manager.get_trained_projects()
             
-            # Format project choices: "Project 126 (3 models)"
-            project_choices = []
-            for p in projects:
-                choice_label = f"{p['name']} ({p['model_count']} models) ID: {p['cvat_project_id']}"
-                project_choices.append((choice_label, p['cvat_project_id']))
+                # Format project choices: "Project 126 (3 models)"
+                project_choices = []
+                for p in projects:
+                    choice_label = f"{p['name']} ({p['model_count']} models) ID: {p['cvat_project_id']}"
+                    project_choices.append((choice_label, p['cvat_project_id']))
             
-            initial_project_id = project_choices[0][1] if project_choices else None
+                initial_project_id = project_choices[0][1] if project_choices else None
             
-            # 2. Model Selection (filtered by project)
-            # Get initial models for first project
-            initial_models = model_manager.get_models(initial_project_id)
-            #initial_models = registry.list_models(cvat_project_id=initial_project_id) if initial_project_id else []
-            model_choices = []
-            for m in initial_models:
-                choice_label = f"{m['name']} {m['version']} - {m['task'].title()}: {m['primary_score']:.2f}"
-                model_choices.append((choice_label, m['id']))
+                # 2. Model Selection (filtered by project)
+                # Get initial models for first project
+                initial_models = model_manager.get_models(initial_project_id)
+                #initial_models = registry.list_models(cvat_project_id=initial_project_id) if initial_project_id else []
+                model_choices = []
+                for m in initial_models:
+                    choice_label = f"{m['name']} {m['version']} - {m['task'].title()}: {m['primary_score']:.2f}"
+                    model_choices.append((choice_label, m['id']))
             
-            initial_model_id = model_choices[0][1] if model_choices else None
+                initial_model_id = model_choices[0][1] if model_choices else None
 
-            with gr.Row():
-                project_dropdown = gr.Dropdown(
-                    label="1. Select CVAT Project",
-                    choices=project_choices,
-                    value=initial_project_id,
-                    interactive=True,
-                    elem_id="project_dropdown"
-                )
-                model_dropdown = gr.Dropdown(
-                    label="2. Select Trained Model",
-                    choices=model_choices,
-                    value=initial_model_id,
-                    interactive=True,
-                    elem_id="model_dropdown"
-                )
+                with gr.Row():
+                    project_dropdown = gr.Dropdown(
+                        label="1. Select CVAT Project",
+                        choices=project_choices,
+                        value=initial_project_id,
+                        interactive=True,
+                        elem_id="project_dropdown"
+                    )
+                    model_dropdown = gr.Dropdown(
+                        label="2. Select Trained Model",
+                        choices=model_choices,
+                        value=initial_model_id,
+                        interactive=True,
+                        elem_id="model_dropdown"
+                    )
             
-            with gr.Accordion("📊 Model Details", open=False):
-                model_details_html = gr.HTML(
-                    value="<p>Select a model to view details</p>"
-                )
+                with gr.Accordion("📊 Model Details", open=False):
+                    model_details_html = gr.HTML(
+                        value="<p>Select a model to view details</p>"
+                    )
             
-            show_plots_checkbox = gr.Checkbox(
-                value=False,
-                label="Show Model Training Analysis"
-            )
+                show_plots_checkbox = gr.Checkbox(
+                    value=False,
+                    label="Show Model Training Analysis"
+                )
 
-            with gr.Group(visible=False) as plots_group:
-                model_plots_gallery = gr.Gallery(
-                    label="Model Training Analysis", 
-                    show_label=True, 
-                    elem_id="model_plots",
+                with gr.Group(visible=False) as plots_group:
+                    model_plots_gallery = gr.Gallery(
+                        label="Model Training Analysis", 
+                        show_label=True, 
+                        elem_id="model_plots",
+                        columns=[4],
+                        rows=[1],
+                        height=200,
+                        allow_preview=True,
+                        object_fit="contain",
+                        interactive=False
+                    )
+                
+                gr.HTML("""
+                    <div style="text-align: center; margin: 15px 0;">
+                        <div style="
+                            height: 1px; 
+                            width: 100%;
+                            max-width: 100%;
+                            margin: 0 auto;
+                            background: linear-gradient(90deg, transparent, #6366f1, transparent); 
+                            box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);">
+                        </div>
+                    </div>
+                """)
+
+                # 3. Prediction Interface
+                gr.Markdown("### 📂 Select Test Image")
+                test_gallery = gr.Gallery(
+                    label="Test Images", 
+                    show_label=False, 
+                    elem_id="test_gallery",
                     columns=[4],
                     rows=[1],
-                    height=200,
+                    height=150,
                     allow_preview=True,
-                    object_fit="contain",
-                    interactive=False
+                    interactive=True
                 )
-                
-            gr.HTML("""
-                <div style="text-align: center; margin: 15px 0;">
-                    <div style="
-                        height: 1px; 
-                        width: 100%;
-                        max-width: 100%;
-                        margin: 0 auto;
-                        background: linear-gradient(90deg, transparent, #6366f1, transparent); 
-                        box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);">
-                    </div>
-                </div>
-            """)
-
-            # 3. Prediction Interface
-            gr.Markdown("### 📂 Select Test Image")
-            test_gallery = gr.Gallery(
-                label="Test Images", 
-                show_label=False, 
-                elem_id="test_gallery",
-                columns=[4],
-                rows=[1],
-                height=150,
-                allow_preview=True,
-                interactive=True
-            )
-            with gr.Row():
-                with gr.Column(scale=1):
-                    gr.Markdown("### 🖼️ Run Prediction")
-                    input_file = gr.File(
-                        label="Input Images (Batch), Zip (Images only), or Video", 
-                        file_types=["image", "video", ".zip"],
-                        file_count="multiple",
-                        height=400
-                    )
-                    with gr.Row():
-                        conf_slider = gr.Slider(
-                            minimum=0.01, maximum=1.0, value=0.25, 
-                            step=0.01, label="Confidence Threshold"
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 🖼️ Run Prediction")
+                        input_file = gr.File(
+                            label="Input Images (Batch), Zip (Images only), or Video", 
+                            file_types=["image", "video", ".zip"],
+                            file_count="multiple",
+                            height=400
                         )
+                        with gr.Row():
+                            conf_slider = gr.Slider(
+                                minimum=0.01, maximum=1.0, value=0.25, 
+                                step=0.01, label="Confidence Threshold"
+                            )
                     
-                        iou_slider = gr.Slider(
-                            minimum=0.01, maximum=1.0, value=0.45, 
-                            step=0.01, label="IOU Threshold"
-                        )
+                            iou_slider = gr.Slider(
+                                minimum=0.01, maximum=1.0, value=0.45, 
+                                step=0.01, label="IOU Threshold"
+                            )
 
-                    output_ext = gr.Dropdown(
-                        label="Output Extension",
-                        choices=[".jpg", ".png", ".bmp", ".webp", ".mp4", ".mkv", ".webm"],
-                        value=".jpg",
-                        interactive=True,
-                        info="Select image format for Zip/Batch or video format for Video input"
-                    )
+                        output_ext = gr.Dropdown(
+                            label="Output Extension",
+                            choices=[".jpg", ".png", ".bmp", ".webp", ".mp4", ".mkv", ".webm"],
+                            value=".jpg",
+                            interactive=True,
+                            info="Select image format for Zip/Batch or video format for Video input"
+                        )
                         
-                    predict_btn = gr.Button("🚀 Predict", variant="primary", elem_id="btn")
+                        predict_btn = gr.Button("🚀 Predict", variant="primary", elem_id="btn")
                     
-                with gr.Column(scale=1):
-                    gr.Markdown("### 📊 Prediction Result")
-                    # Gallery for batch images
-                    output_gallery = gr.Gallery(
-                        label="Prediction Results", 
-                        show_label=True, 
-                        elem_id="output_gallery", 
-                        columns=[3], 
-                        rows=[2], 
-                        height=400, 
-                        object_fit="contain"
-                    )
-                    output_video = gr.Video(label="Prediction Result Video", height=400, visible=False)
-                    # File output for Zip results
-                    output_file = gr.File(label="Download Results (Zip)", visible=False)
+                    with gr.Column(scale=1):
+                        gr.Markdown("### 📊 Prediction Result")
+                        # Gallery for batch images
+                        output_gallery = gr.Gallery(
+                            label="Prediction Results", 
+                            show_label=True, 
+                            elem_id="output_gallery", 
+                            columns=[3], 
+                            rows=[2], 
+                            height=400, 
+                            object_fit="contain"
+                        )
+                        output_video = gr.Video(label="Prediction Result Video", height=400, visible=False)
+                        # File output for Zip results
+                        output_file = gr.File(label="Download Results (Zip)", visible=False)
                     
-                    with gr.Accordion("📋 Detection Details", open=False):
-                        result_details = gr.Code(label="", language="json", elem_id="detection_details_code", lines=10)
+                        with gr.Accordion("📋 Detection Details", open=False):
+                            result_details = gr.Code(label="", language="json", elem_id="detection_details_code", lines=10)
     
     return {
         "tab": tab,

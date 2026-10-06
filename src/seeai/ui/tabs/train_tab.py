@@ -14,209 +14,209 @@ def create_tab(app):
             gr.Markdown("Train a new model from your CVAT Project")
             
             with gr.Column():
-            # Get initial CVAT projects and select first one
-            cvat_projects_initial = model_manager.get_cvat_projects()
-            cvat_initial_value = cvat_projects_initial[0][1] if cvat_projects_initial else None
+                # Get initial CVAT projects and select first one
+                cvat_projects_initial = model_manager.get_cvat_projects()
+                cvat_initial_value = cvat_projects_initial[0][1] if cvat_projects_initial else None
             
-            cvat_projects_dropdown = gr.Dropdown(
-                label="Choose CVAT Project", 
-                choices=cvat_projects_initial,
-                value=cvat_initial_value,
-                visible=True, 
-                interactive=True
-            )
-            with gr.Row():
-                with gr.Column():
-                    format_dropdown = gr.Dropdown(
-                        label="Choose Format",
-                        choices=["Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0","Ultralytics YOLO Classification 1.0"],
-                        value="Ultralytics YOLO Detection 1.0",
-                        interactive=True
-                    )
-                    
-                    model_dropdown = gr.Dropdown(
-                            choices=app.get_format_pretrained_models("Ultralytics YOLO Detection 1.0"),
-                            label="Select Pre-trained Model",
+                cvat_projects_dropdown = gr.Dropdown(
+                    label="Choose CVAT Project", 
+                    choices=cvat_projects_initial,
+                    value=cvat_initial_value,
+                    visible=True, 
+                    interactive=True
+                )
+                with gr.Row():
+                    with gr.Column():
+                        format_dropdown = gr.Dropdown(
+                            label="Choose Format",
+                            choices=["Ultralytics YOLO Detection 1.0", "Ultralytics YOLO Segmentation 1.0","Ultralytics YOLO Classification 1.0"],
+                            value="Ultralytics YOLO Detection 1.0",
                             interactive=True
                         )
                     
-                with gr.Column():
-                        model_name_input = gr.Textbox(
-                            label="Model Name (Optional)",
-                            placeholder="Leave empty for auto-generated name",
-                            value=""
-                        )
-                        model_version_input = gr.Textbox(
-                            label="Version (Optional)",
-                            placeholder="Leave empty for auto-increment (v1, v2, ...)",
-                            value=""
-                        )
-                
-            train_config_checkbox = gr.Checkbox(
-                value=False,
-                label="⚙️ Set Own Training Configuration",
-                elem_classes="train-config-checkbox"
-            )
-
-            # Custom styling for Training Configuration section
-            gr.HTML("""
-                <style>
-                    /* Control checkbox spacing */
-                    .train-config-checkbox {
-                        margin-bottom: 0px !important;
-                    }
-                    /* Remove padding from HTML container wrapper */
-                    .html-container.svelte-phx28p {
-                        padding: 0 !important;
-                        margin: 0 !important;
-                    }
-                    /* Remove spacing from block containers */
-                    .block.svelte-1svsvh2 {
-                        margin-top: 0 !important;
-                        margin-bottom: 0 !important;
-                    }
-                    .training-config-container {
-                        background: linear-gradient(135deg, #1e3a8a10 0%, #3b82f615 100%) !important;
-                        border: 2px solid #3b82f6 !important;
-                        border-radius: 12px !important;
-                        padding: 10px !important;
-                        margin: 0 !important;
-                        box-shadow: 0 4px 6px rgba(59, 130, 246, 0.1) !important;
-                    }
-                    /* Override Gradio's default group padding */
-                    .training-config-container > .form {
-                        padding: 0 !important;
-                        gap: 10px !important;
-                    }
-                    /* Remove spacing from parent containers */
-                    .training-config-container {
-                        margin-top: 0 !important;
-                        margin-bottom: 0 !important;
-                    }
-                    .training-config-header {
-                        background: linear-gradient(90deg, #3b82f6, #6366f1);
-                        color: white;
-                        padding: 12px;
-                        border-radius: 12px;
-                        margin-bottom: 10px;
-                        font-weight: 600;
-                        font-size: 1.1em;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-                    }
-                </style>
-            """)
-
-            with gr.Group(visible=False, elem_classes="training-config-container") as train_config_group:
-                gr.HTML('<div class="training-config-header">⚙️ Training Configuration</div>')
-                with gr.Row():
-                    experiments_slider = gr.Slider(
-                        minimum=1, 
-                        maximum=1000, 
-                        value=100, 
-                        step=1, 
-                        label="Epochs"
-                    )
+                        model_dropdown = gr.Dropdown(
+                                choices=app.get_format_pretrained_models("Ultralytics YOLO Detection 1.0"),
+                                label="Select Pre-trained Model",
+                                interactive=True
+                            )
                     
-                    imgsz_slider = gr.Slider(
-                        minimum=64, 
-                        maximum=1280, 
-                        value=640, 
-                        step=32, 
-                        label="Image Size"
-                    )
-
+                    with gr.Column():
+                            model_name_input = gr.Textbox(
+                                label="Model Name (Optional)",
+                                placeholder="Leave empty for auto-generated name",
+                                value=""
+                            )
+                            model_version_input = gr.Textbox(
+                                label="Version (Optional)",
+                                placeholder="Leave empty for auto-increment (v1, v2, ...)",
+                                value=""
+                            )
                 
-                manual_aug_checkbox = gr.Checkbox(
+                train_config_checkbox = gr.Checkbox(
                     value=False,
-                    label="Manual Adjust Augmentation"
+                    label="⚙️ Set Own Training Configuration",
+                    elem_classes="train-config-checkbox"
                 )
-                    
-                base_image_state = gr.State(None)
-                    
-                with gr.Group(visible=False) as aug_settings_group:
+
+                # Custom styling for Training Configuration section
+                gr.HTML("""
+                    <style>
+                        /* Control checkbox spacing */
+                        .train-config-checkbox {
+                            margin-bottom: 0px !important;
+                        }
+                        /* Remove padding from HTML container wrapper */
+                        .html-container.svelte-phx28p {
+                            padding: 0 !important;
+                            margin: 0 !important;
+                        }
+                        /* Remove spacing from block containers */
+                        .block.svelte-1svsvh2 {
+                            margin-top: 0 !important;
+                            margin-bottom: 0 !important;
+                        }
+                        .training-config-container {
+                            background: linear-gradient(135deg, #1e3a8a10 0%, #3b82f615 100%) !important;
+                            border: 2px solid #3b82f6 !important;
+                            border-radius: 12px !important;
+                            padding: 10px !important;
+                            margin: 0 !important;
+                            box-shadow: 0 4px 6px rgba(59, 130, 246, 0.1) !important;
+                        }
+                        /* Override Gradio's default group padding */
+                        .training-config-container > .form {
+                            padding: 0 !important;
+                            gap: 10px !important;
+                        }
+                        /* Remove spacing from parent containers */
+                        .training-config-container {
+                            margin-top: 0 !important;
+                            margin-bottom: 0 !important;
+                        }
+                        .training-config-header {
+                            background: linear-gradient(90deg, #3b82f6, #6366f1);
+                            color: white;
+                            padding: 12px;
+                            border-radius: 12px;
+                            margin-bottom: 10px;
+                            font-weight: 600;
+                            font-size: 1.1em;
+                            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                        }
+                    </style>
+                """)
+
+                with gr.Group(visible=False, elem_classes="training-config-container") as train_config_group:
+                    gr.HTML('<div class="training-config-header">⚙️ Training Configuration</div>')
                     with gr.Row():
-                        with gr.Column():
-                            aug_preview_img = gr.Image(label="Augmentation Preview", interactive=False, type="pil")
-                            gr.Markdown("### 👁️ Live Preview\nClick below to load a random image from the task to see how augmentations affect it.")
-                            load_sample_btn = gr.Button("🎲 Load New Sample", size="sm")
+                        experiments_slider = gr.Slider(
+                            minimum=1, 
+                            maximum=1000, 
+                            value=100, 
+                            step=1, 
+                            label="Epochs"
+                        )
+                    
+                        imgsz_slider = gr.Slider(
+                            minimum=64, 
+                            maximum=1280, 
+                            value=640, 
+                            step=32, 
+                            label="Image Size"
+                        )
 
-                        with gr.Column():
-                            gr.Markdown("#### 🎨 Color Augmentation")
-                            with gr.Row():
-                                hsv_h = gr.Slider(0.0, 1.0, value=0.015, step=0.001, label="HSV-Hue")
-                                hsv_s = gr.Slider(0.0, 1.0, value=0.7, step=0.01, label="HSV-Saturation")
-                            with gr.Row():
-                                hsv_v = gr.Slider(0.0, 1.0, value=0.4, step=0.01, label="HSV-Value")
-                                bgr = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="BGR Flip Prob")
+                
+                    manual_aug_checkbox = gr.Checkbox(
+                        value=False,
+                        label="Manual Adjust Augmentation"
+                    )
+                    
+                    base_image_state = gr.State(None)
+                    
+                    with gr.Group(visible=False) as aug_settings_group:
+                        with gr.Row():
+                            with gr.Column():
+                                aug_preview_img = gr.Image(label="Augmentation Preview", interactive=False, type="pil")
+                                gr.Markdown("### 👁️ Live Preview\nClick below to load a random image from the task to see how augmentations affect it.")
+                                load_sample_btn = gr.Button("🎲 Load New Sample", size="sm")
 
-                            gr.Markdown("#### 📐 Geometric Transforms")
-                            with gr.Row():
-                                degrees = gr.Slider(-180, 180, value=0.0, step=1.0, label="Rotation (+/- deg)")
-                                translate = gr.Slider(0.0, 1.0, value=0.1, step=0.01, label="Translate (+/- frac)")
-                            with gr.Row():
-                                scale = gr.Slider(0.0, 2.0, value=0.5, step=0.01, label="Scale (+/- gain)")
-                                shear = gr.Slider(-180, 180, value=0.0, step=1.0, label="Shear (+/- deg)")
-                            with gr.Row():
-                                perspective = gr.Slider(0.0, 0.001, value=0.0, step=0.0001, label="Perspective")
-                                flipud = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Flip Up-Down Prob")
-                            with gr.Row():
-                                fliplr = gr.Slider(0.0, 1.0, value=0.5, step=0.01, label="Flip Left-Right Prob")
+                            with gr.Column():
+                                gr.Markdown("#### 🎨 Color Augmentation")
+                                with gr.Row():
+                                    hsv_h = gr.Slider(0.0, 1.0, value=0.015, step=0.001, label="HSV-Hue")
+                                    hsv_s = gr.Slider(0.0, 1.0, value=0.7, step=0.01, label="HSV-Saturation")
+                                with gr.Row():
+                                    hsv_v = gr.Slider(0.0, 1.0, value=0.4, step=0.01, label="HSV-Value")
+                                    bgr = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="BGR Flip Prob")
 
-                            gr.Markdown("#### 🔀 Advanced Mixing")
-                            with gr.Row():
-                                mosaic = gr.Slider(0.0, 1.0, value=1.0, step=0.01, label="Mosaic Prob")
-                                mixup = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Mixup Prob")
-                            with gr.Row():
-                                cutmix = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Cutmix Prob")
-                                copy_paste = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Copy-Paste Prob")
+                                gr.Markdown("#### 📐 Geometric Transforms")
+                                with gr.Row():
+                                    degrees = gr.Slider(-180, 180, value=0.0, step=1.0, label="Rotation (+/- deg)")
+                                    translate = gr.Slider(0.0, 1.0, value=0.1, step=0.01, label="Translate (+/- frac)")
+                                with gr.Row():
+                                    scale = gr.Slider(0.0, 2.0, value=0.5, step=0.01, label="Scale (+/- gain)")
+                                    shear = gr.Slider(-180, 180, value=0.0, step=1.0, label="Shear (+/- deg)")
+                                with gr.Row():
+                                    perspective = gr.Slider(0.0, 0.001, value=0.0, step=0.0001, label="Perspective")
+                                    flipud = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Flip Up-Down Prob")
+                                with gr.Row():
+                                    fliplr = gr.Slider(0.0, 1.0, value=0.5, step=0.01, label="Flip Left-Right Prob")
 
-                            gr.Markdown("#### ✨ Image Quality & Effects")
-                            with gr.Row():
-                                erasing = gr.Slider(0.0, 0.9, value=0.4, step=0.01, label="Erasing %")
+                                gr.Markdown("#### 🔀 Advanced Mixing")
+                                with gr.Row():
+                                    mosaic = gr.Slider(0.0, 1.0, value=1.0, step=0.01, label="Mosaic Prob")
+                                    mixup = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Mixup Prob")
+                                with gr.Row():
+                                    cutmix = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Cutmix Prob")
+                                    copy_paste = gr.Slider(0.0, 1.0, value=0.0, step=0.01, label="Copy-Paste Prob")
 
-            train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg", elem_id="btn")
-            gr.HTML("""
-                <div style="text-align: center; margin: 15px 0;">
-                    <div style="
-                        height: 1px; 
-                        width: 100%;
-                        max-width: 100%;
-                        margin: 0 auto;
-                        background: linear-gradient(90deg, transparent, #6366f1, transparent); 
-                        box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);">
+                                gr.Markdown("#### ✨ Image Quality & Effects")
+                                with gr.Row():
+                                    erasing = gr.Slider(0.0, 0.9, value=0.4, step=0.01, label="Erasing %")
+
+                train_btn = gr.Button("🚀 Start Training", variant="primary", size="lg", elem_id="btn")
+                gr.HTML("""
+                    <div style="text-align: center; margin: 15px 0;">
+                        <div style="
+                            height: 1px; 
+                            width: 100%;
+                            max-width: 100%;
+                            margin: 0 auto;
+                            background: linear-gradient(90deg, transparent, #6366f1, transparent); 
+                            box-shadow: 0 0 10px rgba(99, 102, 241, 0.5);">
+                        </div>
                     </div>
-                </div>
-            """)
+                """)
             
-            dataset_log = gr.Textbox(
-                label="Dataset Detail Log", 
-                interactive=False, 
-                lines=5,
-                value="Waiting for dataset..."
-            )
+                dataset_log = gr.Textbox(
+                    label="Dataset Detail Log", 
+                    interactive=False, 
+                    lines=5,
+                    value="Waiting for dataset..."
+                )
             
-            training_log = gr.Textbox(
-                label="Training Log", 
-                interactive=False, 
-                lines=2,
-                value="Waiting to start..."
-            )
-            # ETA Components
-            eta_output = gr.Markdown("⏳ Estimated Time: Waiting to start...", visible=False)
-            current_training_project_name = gr.State(None) 
+                training_log = gr.Textbox(
+                    label="Training Log", 
+                    interactive=False, 
+                    lines=2,
+                    value="Waiting to start..."
+                )
+                # ETA Components
+                eta_output = gr.Markdown("⏳ Estimated Time: Waiting to start...", visible=False)
+                current_training_project_name = gr.State(None) 
 
-            download_model_btn = gr.DownloadButton(
-                label="Download Model", 
-                variant="primary", 
-                size="lg", 
-                elem_id="btn", 
-                visible=False
-            )
+                download_model_btn = gr.DownloadButton(
+                    label="Download Model", 
+                    variant="primary", 
+                    size="lg", 
+                    elem_id="btn", 
+                    visible=False
+                )
             
-            filename_input = gr.Textbox(
-                label="Custom Output Filename (Optional but this will be the train model name)", 
-                placeholder="e.g. my_dataset.zip",
-                lines=1,
+                filename_input = gr.Textbox(
+                    label="Custom Output Filename (Optional but this will be the train model name)", 
+                    placeholder="e.g. my_dataset.zip",
+                    lines=1,
                 visible=False
             )
 
