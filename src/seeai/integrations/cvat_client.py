@@ -9,22 +9,16 @@ from src.seeai.utils.file_utils import extract_and_flatten_zip
 from src.seeai.data.dataset_manager import remove_dataset_files
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Monkey-patch: CVAT Server 2.77.x returns null for the `data` field on freshly
-# created tasks, but the SDK model strictly requires an int.  Disabling the SDK's
-# strict type-checker (which is purely a client-side validation) is the safest
-# fix until the SDK ships a corrected model.
-# ─────────────────────────────────────────────────────────────────────────────
 def _patch_cvat_sdk_type_check():
     try:
         from cvat_sdk.api_client.api_client import ApiClient
-        _original_call_api = ApiClient.__call_api
+        _original_deserialize = ApiClient.deserialize
 
-        def _lenient_call_api(self, resource_path, method, *args, **kwargs):
+        def _lenient_deserialize(self, response, response_schema, *, _check_type=True):
             # Force type-checking off so None values in optional fields don't crash
-            kwargs.setdefault('_check_type', False)
-            return _original_call_api(self, resource_path, method, *args, **kwargs)
+            return _original_deserialize(self, response, response_schema, _check_type=False)
 
-        ApiClient.__call_api = _lenient_call_api  # type: ignore[method-assign]
+        ApiClient.deserialize = _lenient_deserialize
     except Exception as _e:
         print(f"⚠️  CVAT SDK patch skipped: {_e}")
 
