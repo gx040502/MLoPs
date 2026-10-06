@@ -174,7 +174,7 @@ class APP():
     def inference_dataset(self, prompt='.', confidence_threshold=0.3, inference_format="Detection"):
         success, dataset = self.get_dataset_by_name(self.selected_dataset)
         if not success:
-             return f"❌ Error: Dataset '{self.selected_dataset}' not found.", ""
+             return f"❌ Error: Dataset '{self.selected_dataset}' not found.", "", None
         
         return image_processing.inference_dataset(
             model=self.model,

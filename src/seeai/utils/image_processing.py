@@ -192,8 +192,11 @@ def inference_dataset(model, sam_model, datasets_dir, selected_dataset_name, dat
         )
     
     dataset_dir = Path(dataset_path)
-    output_dir = Path(datasets_dir)/ '.output' / f"{selected_dataset_name}_coco" 
+    output_dir = Path(datasets_dir)/ '.output' / f"{selected_dataset_name}_coco_yolo" 
     output_dir.mkdir(parents=True, exist_ok=True)
+    
+    yolo_labels_dir = output_dir / 'yolo_labels'
+    yolo_labels_dir.mkdir(parents=True, exist_ok=True)
     
     initial_categories = []
     category_map = {}
@@ -263,9 +266,28 @@ def inference_dataset(model, sam_model, datasets_dir, selected_dataset_name, dat
                 segmentation=det.get('segmentation', [])
             )
             
+            # YOLO logic (0-indexed class IDs)
+            x_center = ((xyxy[0] + xyxy[2]) / 2) / width
+            y_center = ((xyxy[1] + xyxy[3]) / 2) / height
+            w = (xyxy[2] - xyxy[0]) / width
+            h = (xyxy[3] - xyxy[1]) / height
+            
+            yolo_class_id = cat_id - 1
+            with open(yolo_labels_dir / f"{Path(img_path).stem}.txt", "a") as f:
+                f.write(f"{yolo_class_id} {x_center:.6f} {y_center:.6f} {w:.6f} {h:.6f}\n")
+            
     coco_builder.save_json(Path(coco_builder.directories['annotations'])/'instances_Train.json')
-    shutil.make_archive(coco_builder.directories['base'], 'zip', coco_builder.directories['base'])
+    
+    # Write YOLO dataset.yaml
+    yaml_content = "path: .\ntrain: train_images\nval: train_images\n\nnames:\n"
+    sorted_cats = sorted(category_map.items(), key=lambda x: x[1])
+    for name, cid in sorted_cats:
+        yaml_content += f"  {cid - 1}: {name}\n"
+    with open(output_dir / "dataset.yaml", "w") as f:
+        f.write(yaml_content)
 
+    # Zip the entire output directory (contains both COCO and YOLO formats)
+    zip_path = shutil.make_archive(output_dir.as_posix(), 'zip', output_dir.as_posix())
     annotated_images_dir = Path(coco_builder.directories['annotated_images'])
     
     return (
@@ -274,7 +296,8 @@ def inference_dataset(model, sam_model, datasets_dir, selected_dataset_name, dat
         f"color: var(--body-text-color); min-height: 80px;'>"
         f"Inference completed on {len(imgs)} images.<br>Results saved to '<i>{output_dir}</i>'."
         f"</div>",
-        str(annotated_images_dir)
+        str(annotated_images_dir),
+        zip_path
     )
 
 def preview_augmentation(images, **kwargs):

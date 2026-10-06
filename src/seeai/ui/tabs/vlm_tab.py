@@ -115,6 +115,7 @@ def create_tab(app):
                     visible=False
                 )
 
+                download_btn = gr.File(label="Download Generated Dataset (COCO & YOLO)", interactive=False, visible=False)
 
                 cvat_btn = gr.Button("Create CVAT Project and Task", visible=False, variant="primary")
                 
@@ -137,6 +138,7 @@ def create_tab(app):
         "inference_output": inference_output,
         "annotated_dir_path": annotated_dir_path,
         "annotated_gallery": annotated_gallery,
+        "download_btn": download_btn,
         "cvat_btn": cvat_btn,
         "detection_info": detection_info,
         "raw_output": raw_output
@@ -215,10 +217,15 @@ def setup_events(app, components, all_components):
                 images.append(os.path.join(dir_path, f))
         return images
 
+    def refresh_download_btn(zip_path):
+        if zip_path:
+            return gr.update(value=zip_path, visible=True)
+        return gr.update(visible=False)
+
     c["inference_btn"].click(
         fn=app.inference_dataset,
         inputs=[c["vlm_text_input"], c["vlm_confidence_slider"], c["inference_format"]],
-        outputs=[c["inference_output"], c["annotated_dir_path"]]  # Store dir path in hidden textbox
+        outputs=[c["inference_output"], c["annotated_dir_path"], c["download_btn"]]  # Update download_btn with zip path
     ).then(
         fn=load_annotated_images,
         inputs=[c["annotated_dir_path"]],  # Read dir path from hidden textbox
@@ -227,6 +234,10 @@ def setup_events(app, components, all_components):
         fn=refresh_cvat_ui,
         inputs=[c["inference_output"]],
         outputs=[c["inference_btn"], c["cvat_btn"], c["annotated_gallery"]]
+    ).then(
+        fn=refresh_download_btn,
+        inputs=[c["download_btn"]],
+        outputs=[c["download_btn"]]
     )
 
     c["cvat_btn"].click(
