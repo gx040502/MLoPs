@@ -1,4 +1,5 @@
 import gradio as gr
+from src.seeai.ui.components.upload_component import create_upload_components, setup_events as setup_upload_events
 from src.seeai.ui.ui_logic import load_selected_img, get_dataset_images_for_gallery
 from pathlib import Path
 import os
@@ -7,6 +8,7 @@ def create_tab(app):
         # ============================================================
         # Upload Section (embedded from upload_tab)
         # ============================================================
+        upload_components = create_upload_components(app)
         
         
         # Add separator
@@ -143,10 +145,12 @@ def create_tab(app):
     
     
     
+    components_dict.update(upload_components)
     return components_dict
 
 def setup_events(app, components, all_components):
     c = components
+    setup_upload_events(app, components, all_components)
     
     
     
