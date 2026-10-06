@@ -461,5 +461,9 @@ def setup_events(app, components, all_components):
         c["erasing"]
     ]
     
-    for slider in aug_inputs[1:]:
-        slider.change(fn=update_aug_preview, inputs=aug_inputs, outputs=c["aug_preview_img"])
+    gr.on(
+        triggers=[slider.change for slider in aug_inputs[1:]],
+        fn=update_aug_preview, 
+        inputs=aug_inputs, 
+        outputs=c["aug_preview_img"]
+    )
