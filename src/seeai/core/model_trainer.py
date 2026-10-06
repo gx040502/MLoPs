@@ -22,9 +22,16 @@ def run_training(project_name, model_path, epochs, imgsz=640, manual_aug=False, 
     print(f"Starting training for project: {project_name}")
     print(f"Model: {model_path}, Epochs: {epochs}, Imgsz: {imgsz}, Manual Aug: {manual_aug}, Format: {format_name}")
 
+    from src.seeai.config.settings import GDRIVE_OUTPUT_DIR
+    
     base_dir = Path(__file__).resolve().parents[3].joinpath('data')
     dataset_dir = base_dir / 'datasets' / project_name
-    output_dir = base_dir / 'models/train' / project_name
+    
+    if GDRIVE_OUTPUT_DIR and Path(GDRIVE_OUTPUT_DIR).exists():
+        output_dir = Path(GDRIVE_OUTPUT_DIR) / project_name
+    else:
+        output_dir = base_dir / 'models/train' / project_name
+        
     output_dir.mkdir(parents=True, exist_ok=True)
     model_output_name = Path(model_path).stem  # Works on all OS
     

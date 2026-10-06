@@ -287,8 +287,13 @@ class ModelManager:
                         # We use the logic from app.py to find the latest run directory in models/train/{project_name}
                         # because model_trainer.run_training returns a message string, not a clean path.
                         
+                        from src.seeai.config.settings import GDRIVE_OUTPUT_DIR
+                        
                         base_dir = Path(__file__).resolve().parents[3].joinpath('data')
-                        project_train_dir = base_dir / "models/train" / project_name
+                        if GDRIVE_OUTPUT_DIR and Path(GDRIVE_OUTPUT_DIR).exists():
+                            project_train_dir = Path(GDRIVE_OUTPUT_DIR) / project_name
+                        else:
+                            project_train_dir = base_dir / "models/train" / project_name
                         best_model_path = None
                         
                         if project_train_dir.exists():
