@@ -4,11 +4,16 @@ from src.seeai.core import model_trainer
 
 def create_tab(app):
     model_manager = ModelManager("data/database.db")
-    with gr.Tab("🔒 Train (CVAT Required)", id="train_tab", interactive=False) as tab:
-        gr.Markdown("## Train New Model")
-        gr.Markdown("Train a new model from your CVAT Project")
-        
-        with gr.Column():
+    with gr.Tab("🔒 Train (CVAT Required)", id="train_tab") as tab:
+        with gr.Column(visible=True) as locked_msg:
+            gr.Markdown("## 🔒 Access Denied")
+            gr.Markdown("You must authenticate with CVAT in the **Setup & Login** tab to use this feature.")
+            
+        with gr.Column(visible=False) as tab_content:
+            gr.Markdown("## Train New Model")
+            gr.Markdown("Train a new model from your CVAT Project")
+            
+            with gr.Column():
             # Get initial CVAT projects and select first one
             cvat_projects_initial = model_manager.get_cvat_projects()
             cvat_initial_value = cvat_projects_initial[0][1] if cvat_projects_initial else None
@@ -219,6 +224,8 @@ def create_tab(app):
 
     return {
         "tab": tab,
+        "locked_msg": locked_msg,
+        "tab_content": tab_content,
         "cvat_projects_dropdown": cvat_projects_dropdown,
         "format_dropdown": format_dropdown,
         "model_dropdown": model_dropdown,

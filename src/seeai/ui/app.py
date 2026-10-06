@@ -122,8 +122,7 @@ def load_dataset_interface(app_interface, app):
         if not user or not pwd or not url:
             return [
                 "<span style='color: #FF416C;'>❌ Please enter URL, username, and password</span>",
-                gr.update(),
-                gr.update()
+                gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
             ]
             
         try:
@@ -139,8 +138,7 @@ def load_dataset_interface(app_interface, app):
         except Exception as e:
             return [
                 f"<span style='color: #FF416C;'>❌ Authentication Failed: Invalid credentials or server offline</span>",
-                gr.update(),
-                gr.update()
+                gr.update(), gr.update(), gr.update(), gr.update(), gr.update(), gr.update()
             ]
             
         # Save creds to env and allow access to locked tabs
@@ -155,8 +153,12 @@ def load_dataset_interface(app_interface, app):
             
         return [
             "<span style='color: #38ef7d;'>✅ Successfully Authenticated! Tabs Unlocked.</span>",
-            gr.update(interactive=True, label="🧠 Train Model"),
-            gr.update(interactive=True, label="🎱 Predict Model")
+            gr.update(label="🧠 Train Model"),
+            gr.update(visible=False),
+            gr.update(visible=True),
+            gr.update(label="🎱 Predict Model"),
+            gr.update(visible=False),
+            gr.update(visible=True)
         ]
 
     def handle_gdrive_auth():
@@ -168,7 +170,15 @@ def load_dataset_interface(app_interface, app):
     login_btn.click(
         fn=handle_cvat_login,
         inputs=[cvat_url, cvat_user, cvat_pass],
-        outputs=[login_status, all_components["train_tab"]["tab"], all_components["predict_tab"]["tab"]]
+        outputs=[
+            login_status, 
+            all_components["train_tab"]["tab"], 
+            all_components["train_tab"]["locked_msg"], 
+            all_components["train_tab"]["tab_content"],
+            all_components["predict_tab"]["tab"],
+            all_components["predict_tab"]["locked_msg"], 
+            all_components["predict_tab"]["tab_content"]
+        ]
     )
     
     gdrive_btn.click(fn=handle_gdrive_auth, outputs=[gdrive_status])

@@ -9,12 +9,17 @@ from ultralytics import YOLO
 
 
 def create_tab(app):
-    with gr.Tab("🔒 Predict (CVAT Required)", id="predict_tab", interactive=False) as tab:
-        # UI components only
-        gr.Markdown("## Predict Model")
-        gr.Markdown("Select a CVAT project, then choose a trained model to run inference.")
-        
-        with gr.Column():
+    with gr.Tab("🔒 Predict (CVAT Required)", id="predict_tab") as tab:
+        with gr.Column(visible=True) as locked_msg:
+            gr.Markdown("## 🔒 Access Denied")
+            gr.Markdown("You must authenticate with CVAT in the **Setup & Login** tab to use this feature.")
+            
+        with gr.Column(visible=False) as tab_content:
+            # UI components only
+            gr.Markdown("## Predict Model")
+            gr.Markdown("Select a CVAT project, then choose a trained model to run inference.")
+            
+            with gr.Column():
             # 1. Project Selection
             registry = DBManager('data/database.db')
             model_manager = ModelManager('data/database.db')
@@ -154,6 +159,8 @@ def create_tab(app):
     
     return {
         "tab": tab,
+        "locked_msg": locked_msg,
+        "tab_content": tab_content,
         "project_dropdown": project_dropdown,
         "model_dropdown": model_dropdown,
         "model_details_html": model_details_html,
