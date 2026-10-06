@@ -36,25 +36,8 @@ class ModelManager:
         """Fetch and return a list of CVAT projects."""
         try:
             with self.cvat_client as client:
-                # First, get the organization ID for "PixeVision"
-                org_id = None
-                try:
-                    orgs, _ = client.organizations_api.list()
-                    for org in orgs.results:
-                        if org.slug == "PixeVision" or org.name == "PixeVision":
-                            org_id = org.id
-                            print(f"Found organization 'PixeVision' with ID: {org_id}")
-                            break
-                    if not org_id:
-                        print("⚠️ Warning: Organization 'PixeVision' not found. Showing all projects.")
-                except Exception as e:
-                    print(f"⚠️ Warning: Could not fetch organizations: {e}")
-                
-                # Fetch projects, filtered by organization if found
-                if org_id:
-                    projects, _ = client.projects_api.list(org_id=org_id,page_size=100)
-                else:
-                    projects, _ = client.projects_api.list()
+                # Fetch projects
+                projects, _ = client.projects_api.list(page_size=100)
                 
                 # Format as [(Name (ID: X), X)] for Gradio dropdown
                 return [(f"{p.name} (ID: {p.id})", p.id) for p in projects.results]

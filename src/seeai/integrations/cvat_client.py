@@ -289,7 +289,7 @@ def upload_to_cvat(datasets_dir, zip_file_path, dataset_format, progress=None):
         return False, "❌ No zip file provided"
     
     cvat_format = dataset_format
-    organization = "PixeVision"
+
     
     try:
         # Step 1: Flatten
@@ -321,10 +321,7 @@ def upload_to_cvat(datasets_dir, zip_file_path, dataset_format, progress=None):
             if progress: progress(0.60, desc="📁 Creating CVAT project...")
             project_spec = models.ProjectWriteRequest(name=dataset_name)
             
-            if organization:
-                (project_data, _) = client.api_client.projects_api.create(project_spec, org=organization)
-            else:
-                (project_data, _) = client.api_client.projects_api.create(project_spec)
+            (project_data, _) = client.api_client.projects_api.create(project_spec)
                 
             project_id = project_data.id if hasattr(project_data, 'id') else (project_data['id'] if isinstance(project_data, dict) else None)
             
@@ -348,8 +345,7 @@ def upload_to_cvat(datasets_dir, zip_file_path, dataset_format, progress=None):
                 elif "test" in subset_name: current_subset = "Test"
                 
                 if current_subset:
-                   if organization:
-                        client.api_client.tasks_api.partial_update(id=task.id, patched_task_write_request=models.PatchedTaskWriteRequest(subset=current_subset))
+                    client.api_client.tasks_api.partial_update(id=task.id, patched_task_write_request=models.PatchedTaskWriteRequest(subset=current_subset))
             
         if flattened_zip.exists(): os.remove(flattened_zip)
         
