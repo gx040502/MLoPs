@@ -143,13 +143,11 @@ def create_cvat_project_with_tasks(datasets_dir, selected_dataset_name):
                     segment_size=0
                 )
                 
-                if org_id:
-                    task_data, _ = client.api_client.tasks_api.create(task_write_request=task_spec, org_id=org_id)
-                else:
-                    task_data, _ = client.api_client.tasks_api.create(task_write_request=task_spec)
+                # Use high-level API to avoid SDK deserialization bug with nullable 'data' field
+                high_level_task = client.tasks.create(task_spec)
+                task_id = high_level_task.id
                 
-                print(f"  ✓ Task created (ID: {task_data.id})")
-                high_level_task = client.tasks.retrieve(task_data.id)    
+                print(f"  ✓ Task created (ID: {task_id})")    
                 
                 print(f"  📤 Uploading {len(subset_images)} images...")
                 image_files = [str(images_dir / img['file_name']) for img in subset_images]
@@ -204,8 +202,8 @@ def create_cvat_project_with_tasks(datasets_dir, selected_dataset_name):
                         print(f"    ⚠️ Warning: Tag annotation failed: {e}")
                 
                 temp_coco_file.unlink()
-                task_url = f"{url.rstrip('/')}/tasks/{task_data.id}"
-                task_urls.append((subset_name, task_data.id, task_url))
+                task_url = f"{url.rstrip('/')}/tasks/{task_id}"
+                task_urls.append((subset_name, task_id, task_url))
                 print(f"  ✅ Task complete: {task_url}")
             
             # Update subsets
