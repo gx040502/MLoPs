@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from src.seeai.utils import model as utils
+from src.seeai.models import grounding_dino as model as utils
 from src.seeai.core.annotation_engine import APP
 from .page_datasets import load_dataset_interface
 
