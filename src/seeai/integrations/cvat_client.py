@@ -17,7 +17,7 @@ def create_cvat_project_with_tasks(datasets_dir, selected_dataset_name):
     url = CVAT_HOST
     username = CVAT_USER
     password = CVAT_PASSWORD
-    org_id = 1
+    org_id = None
     
     if not all([url, username, password]):
         return "❌ Error: Missing CVAT credentials."
